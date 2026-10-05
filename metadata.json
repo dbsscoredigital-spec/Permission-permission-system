@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix ระบบขออนุญาตออกนอกสถานศึกษาสำหรับครู (Teacher Exit Permission)",
+  "description": "ระบบยื่นและอนุมัติคำขอออกนอกสถานศึกษาสำหรับครู อนุมัติตามสาขาอัตโนมัติ แจ้งเตือน LINE Flex Message พร้อมบันทึก Google Sheets \u0026 Apps Script และบัตรผ่านสแกน QR Code ตรวจสอบ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

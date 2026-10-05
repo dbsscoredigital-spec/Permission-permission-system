@@ -5,6 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    base: '/Permission-permission-system/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

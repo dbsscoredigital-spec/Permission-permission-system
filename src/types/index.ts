@@ -57,6 +57,7 @@ export interface ExitRequest {
   // Approval Routing
   assignedApproverId: string;
   assignedApproverName: string;
+  assignedApproverLineId?: string;
   status: RequestStatus;
   approvedAt?: string;
   approvedBy?: string;
@@ -87,6 +88,7 @@ export interface SystemSettings {
   schoolName: string;
   collegeCode: string;
   logoUrl?: string;
+  appUrl?: string;
   lineChannelAccessToken: string;
   lineChannelSecret: string;
   googleAppsScriptUrl: string;

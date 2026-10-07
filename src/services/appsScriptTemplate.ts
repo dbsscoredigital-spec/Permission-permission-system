@@ -138,6 +138,117 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// จัดการ Webhook เมื่อมีเหตุการณ์จาก LINE (เช่น กดปุ่ม อนุมัติ / ไม่อนุมัติ ใน LINE Flex Message)
+function handleLineEvents(events) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reqSheet = ss.getSheetByName("Requests");
+  const logSheet = ss.getSheetByName("ApprovalLog");
+  const token = getSettingValue("LINE_CHANNEL_ACCESS_TOKEN");
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    let action = "";
+    let reqId = "";
+
+    // 1. จากการกดปุ่ม Postback ใน LINE Flex Message
+    if (event.type === "postback" && event.postback && event.postback.data) {
+      const dataStr = event.postback.data;
+      const pairs = dataStr.split("&");
+      for (let p = 0; p < pairs.length; p++) {
+        const kv = pairs[p].split("=");
+        if (kv[0] === "action") action = decodeURIComponent(kv[1] || "");
+        if (kv[0] === "reqId") reqId = decodeURIComponent(kv[1] || "");
+      }
+    } 
+    // 2. จากการพิมพ์ข้อความในแชท LINE (เช่น พิมพ์ อนุมัติ, อนุมัติ REQ-..., ไม่อนุมัติ)
+    else if (event.type === "message" && event.message && event.message.type === "text") {
+      const msgText = (event.message.text || "").trim();
+      const isReject = msgText.indexOf("ไม่อนุมัติ") !== -1 || msgText.toLowerCase().indexOf("reject") !== -1;
+      const isApprove = !isReject && (
+        msgText.indexOf("อนุมัติ") !== -1 || 
+        msgText.toLowerCase().indexOf("approve") !== -1 || 
+        msgText.indexOf("ตกลง") !== -1 || 
+        msgText.toLowerCase().indexOf("ok") !== -1
+      );
+
+      if (isReject) action = "reject";
+      if (isApprove) action = "approve";
+
+      if (action) {
+        const match = msgText.match(/REQ-[\w-]+/i);
+        if (match) {
+          reqId = match[0].toUpperCase();
+        } else {
+          // ค้นหาคำขอล่าสุดที่ยังรออนุมัติ
+          const data = reqSheet.getDataRange().getValues();
+          for (let r = data.length - 1; r >= 1; r--) {
+            if (data[r][10] === "pending") {
+              reqId = data[r][0];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!reqId || !action) continue;
+    const isApprove = action === "approve";
+
+      // ค้นหาแถวในตาราง Requests
+      const data = reqSheet.getDataRange().getValues();
+      let matchedReq = null;
+      let matchedRowIdx = -1;
+
+      for (let r = 1; r < data.length; r++) {
+        if (data[r][0] === reqId) {
+          matchedRowIdx = r + 1;
+          matchedReq = {
+            id: data[r][0],
+            submittedAt: data[r][1],
+            userName: data[r][2],
+            branchName: data[r][3],
+            exitDate: data[r][4],
+            exitTime: data[r][5],
+            returnTime: data[r][6],
+            destination: data[r][7],
+            reason: data[r][8],
+            assignedApproverName: data[r][9],
+            status: isApprove ? "approved" : "rejected",
+            userId: data[r][2]
+          };
+          break;
+        }
+      }
+
+      const now = new Date();
+      if (matchedRowIdx > 0) {
+        reqSheet.getRange(matchedRowIdx, 11).setValue(isApprove ? "approved" : "rejected");
+        reqSheet.getRange(matchedRowIdx, 12).setValue(now);
+
+        // บันทึก ApprovalLog
+        logSheet.appendRow([
+          "LOG-" + now.getTime(),
+          reqId,
+          "หัวหน้าสาขา (ผ่าน LINE Webhook)",
+          isApprove ? "approve" : "reject",
+          now,
+          isApprove ? "อนุมัติคำขอผ่าน LINE สำเร็จ" : "ไม่อนุมัติคำขอผ่าน LINE"
+        ]);
+
+        // ส่งแจ้งเตือนกลับหาครูผู้ขอใน LINE
+        if (matchedReq) {
+          sendLineNotificationToTeacher(matchedReq);
+        }
+
+        // ไม่ต้องส่งข้อความตอบกลับหาหัวหน้าสาขาเพิ่มเติม เพื่อประหยัดโควต้าข้อความ LINE
+      }
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "LINE events processed" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 // 1. จัดการสร้างคำขอใหม่
 function handleCreateRequest(req) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();

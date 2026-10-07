@@ -335,6 +335,7 @@ export const INITIAL_SETTINGS: SystemSettings = {
   schoolName: 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
   collegeCode: 'DONBOSCO-SURAT-2026',
   logoUrl: '',
+  appUrl: '',
   lineChannelAccessToken: 'MOCK_TOKEN_k8e9a2f174c_DEMO_READY',
   lineChannelSecret: 'c827361fae4981bc923a',
   googleAppsScriptUrl: '',

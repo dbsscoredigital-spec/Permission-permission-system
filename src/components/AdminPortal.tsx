@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Branch, ExitRequest, ApprovalLog, SystemSettings } from '../types';
+import { StorageService } from '../services/storageService';
 import { DonBoscoLogo } from './DonBoscoLogo';
 import { 
   Shield, 
@@ -13,6 +14,7 @@ import {
   Printer, 
   Settings, 
   History, 
+  CheckCircle,
   CheckCircle2, 
   XCircle, 
   Clock, 
@@ -27,6 +29,7 @@ import {
   FileUp,
   Sparkles,
   AlertTriangle,
+  AlertCircle,
   Check,
   Copy,
   UserMinus,
@@ -36,8 +39,15 @@ import {
   Calendar,
   MapPin,
   Image as ImageIcon,
-  Link as LinkIcon
+  Link as LinkIcon,
+  MessageSquare,
+  Send,
+  Key,
+  Bot,
+  Smartphone,
+  HelpCircle
 } from 'lucide-react';
+import { LineService } from '../services/lineService';
 
 interface AdminPortalProps {
   currentUser: User;
@@ -125,6 +135,129 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Clear Users Confirmation State
   const [showClearUsersModal, setShowClearUsersModal] = useState(false);
   const [clearKeepAdminAndSecurity, setClearKeepAdminAndSecurity] = useState(true);
+
+  // LINE Push Notification Testing States
+  const [testLineUser, setTestLineUser] = useState<User | null>(null);
+  const [testLineStatus, setTestLineStatus] = useState<{
+    loading: boolean;
+    success?: boolean;
+    message?: string;
+    code?: string;
+  } | null>(null);
+  const [tokenInputForTest, setTokenInputForTest] = useState('');
+  const [verifyTokenLoading, setVerifyTokenLoading] = useState(false);
+  const [botInfo, setBotInfo] = useState<{
+    displayName: string;
+    basicId: string;
+    pictureUrl?: string;
+  } | null>(null);
+
+  // Webhook Monitor and Simulator State
+  const [webhookInfo, setWebhookInfo] = useState<{
+    totalEvents: number;
+    lastEvent?: any;
+    loading: boolean;
+    publicWebhookUrl?: string;
+  }>({ totalEvents: 0, loading: false });
+
+  const [simulateReqId, setSimulateReqId] = useState<string>('');
+  const [simulateLoading, setSimulateLoading] = useState(false);
+  const [simulateResult, setSimulateResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const fetchWebhookStatus = async () => {
+    try {
+      setWebhookInfo(prev => ({ ...prev, loading: true }));
+      const res = await fetch('/api/webhook/status');
+      if (res.ok) {
+        const data = await res.json();
+        setWebhookInfo({
+          totalEvents: data.totalWebhooksReceived || 0,
+          lastEvent: data.lastWebhookEvent,
+          publicWebhookUrl: data.publicWebhookUrl,
+          loading: false
+        });
+      }
+    } catch {
+      setWebhookInfo(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      fetchWebhookStatus();
+    }
+  }, [activeTab]);
+
+  const handleSimulateWebhookApprove = async (targetId?: string) => {
+    const idToUse = targetId || simulateReqId;
+    if (!idToUse) {
+      alert('กรุณาเลือกหรือระบุรหัสคำขอที่ต้องการทดสอบ');
+      return;
+    }
+    setSimulateLoading(true);
+    setSimulateResult(null);
+    try {
+      const res = await fetch('/api/webhook/test-simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reqId: idToUse, action: 'approve' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSimulateResult({ success: true, message: data.message });
+        await StorageService.getInstance().syncWithServer();
+        if (onApprove) {
+          onApprove(idToUse);
+        }
+        fetchWebhookStatus();
+      } else {
+        setSimulateResult({ success: false, message: data.error || 'เกิดข้อผิดพลาดในการจำลอง' });
+      }
+    } catch (err: any) {
+      setSimulateResult({ success: false, message: 'เกิดข้อผิดพลาด: ' + (err.message || String(err)) });
+    } finally {
+      setSimulateLoading(false);
+    }
+  };
+
+  const handleOpenTestLine = (user: User) => {
+    setTestLineUser(user);
+    setTestLineStatus(null);
+    const curToken = localSettings.lineChannelAccessToken;
+    setTokenInputForTest(curToken && !curToken.startsWith('MOCK_') ? curToken : '');
+  };
+
+  const handleExecuteLineTest = async (lineId: string, name: string, overrideToken?: string) => {
+    setTestLineStatus({ loading: true });
+    const tokenToUse = overrideToken !== undefined ? overrideToken : localSettings.lineChannelAccessToken;
+    const res = await LineService.getInstance().testSendNotification(lineId, name, tokenToUse);
+    setTestLineStatus({
+      loading: false,
+      success: res.success,
+      message: res.message,
+      code: (res as any).code
+    });
+  };
+
+  const handleVerifyLineBot = async () => {
+    const token = localSettings.lineChannelAccessToken;
+    if (!token || token.startsWith('MOCK_') || token.includes('ใส่_TOKEN')) {
+      alert('กรุณากรอก LINE Channel Access Token จริงจาก LINE Developers Console ก่อนทำการตรวจสอบ');
+      return;
+    }
+    setVerifyTokenLoading(true);
+    try {
+      const res = await LineService.getInstance().verifyToken(token);
+      if (res.success && res.bot) {
+        setBotInfo(res.bot);
+      } else {
+        setBotInfo(null);
+        alert('ตรวจสอบไม่ผ่าน: ' + (res.error || 'Token ไม่ถูกต้องหรือติดต่อ LINE API ไม่ได้'));
+      }
+    } finally {
+      setVerifyTokenLoading(false);
+    }
+  };
 
   // Parse bulk user text lines
   const parseBulkUsersText = (text: string, defaultBranchId: string): User[] => {
@@ -214,11 +347,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   // Filter requests
   const filteredRequests = requests.filter(r => {
+    if (!r) return false;
+    const search = searchTerm.toLowerCase();
     const matchesSearch = 
-      r.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.reason.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.id.toLowerCase().includes(searchTerm.toLowerCase());
+      (r.userName || '').toLowerCase().includes(search) ||
+      (r.destination || '').toLowerCase().includes(search) ||
+      (r.reason || '').toLowerCase().includes(search) ||
+      (r.id || '').toLowerCase().includes(search);
     const matchesBranch = branchFilter === 'all' || r.branchId === branchFilter || r.branchName === branchFilter;
     
     let matchesStatus = true;
@@ -256,19 +391,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     ];
 
     const rows = filteredRequests.map(r => [
-      r.id,
-      r.submittedAt,
-      r.userName,
-      r.branchName,
-      r.exitDate,
-      r.exitTime,
-      r.returnTime,
-      `"${r.destination.replace(/"/g, '""')}"`,
-      `"${r.reason.replace(/"/g, '""')}"`,
-      `"${r.assignedApproverName.replace(/"/g, '""')}"`,
-      r.status,
+      r.id || '',
+      r.submittedAt || '',
+      r.userName || '',
+      r.branchName || '',
+      r.exitDate || '',
+      r.exitTime || '',
+      r.returnTime || '',
+      `"${(r.destination || '').replace(/"/g, '""')}"`,
+      `"${(r.reason || '').replace(/"/g, '""')}"`,
+      `"${(r.assignedApproverName || '').replace(/"/g, '""')}"`,
+      r.status || '',
       r.approvedAt || '',
-      r.travelMethod,
+      r.travelMethod || '',
       r.vehiclePlate || '',
       r.actualExitTime || '',
       r.actualReturnTime || ''
@@ -793,7 +928,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                   <div className="flex items-center justify-between gap-1.5 pt-1">
                     <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
-                      ผู้อนุมัติ: {req.assignedApproverName.split(' ')[0]}
+                      ผู้อนุมัติ: {(req.assignedApproverName || '-').split(' ')[0]}
                     </span>
                     <div className="flex items-center gap-1.5">
                       {req.status === 'pending' && onApprove && (
@@ -903,7 +1038,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        <span className="block truncate max-w-[130px]">{req.assignedApproverName.split(' ')[0]} {req.assignedApproverName.split(' ')[1]}</span>
+                        <span className="block truncate max-w-[130px]">
+                          {(req.assignedApproverName || '-').split(' ')[0]} {(req.assignedApproverName || '').split(' ')[1] || ''}
+                        </span>
                         {req.approvedAt && (
                           <span className="text-[10px] text-emerald-600 block">{req.approvedAt}</span>
                         )}
@@ -914,7 +1051,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 block w-max">
                               รออนุมัติ
                             </span>
-                            {(req.assignedApproverId === 'usr-admin' || req.position.includes('หัวหน้า')) && (
+                            {(req.assignedApproverId === 'usr-admin' || (req.position || '').includes('หัวหน้า')) && (
                               <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200 block w-max">
                                 🌟 คำขอหัวหน้าสาขา
                               </span>
@@ -1189,11 +1326,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="sm:hidden p-3 space-y-2.5">
                   {users
                     .filter(u => {
+                      const sTerm = (userSearchTerm || '').toLowerCase();
                       const matchesSearch = 
-                        u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                        u.username.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                        u.id.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                        u.position.toLowerCase().includes(userSearchTerm.toLowerCase());
+                        (u.name || '').toLowerCase().includes(sTerm) ||
+                        (u.username || '').toLowerCase().includes(sTerm) ||
+                        (u.id || '').toLowerCase().includes(sTerm) ||
+                        (u.position || '').toLowerCase().includes(sTerm);
                       const matchesBranch = userBranchFilter === 'all' || u.branchId === userBranchFilter;
                       const matchesRole = userRoleFilter === 'all' || u.role === userRoleFilter;
                       return matchesSearch && matchesBranch && matchesRole;
@@ -1233,9 +1371,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             <span className="text-slate-400">ตำแหน่ง:</span>
                             <span className="text-slate-700">{u.position}</span>
                           </div>
-                          <div className="flex justify-between pt-0.5 border-t border-slate-200/60 font-mono text-[10px]">
+                          <div className="flex items-center justify-between pt-0.5 border-t border-slate-200/60 font-mono text-[10px]">
                             <span className="text-slate-400">LINE ID:</span>
-                            <span className="text-emerald-700 font-semibold">{u.lineId || '-'}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-emerald-700 font-semibold">{u.lineId || '-'}</span>
+                              {u.lineId && u.lineId.trim().startsWith('U') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTestLine(u)}
+                                  className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded border border-emerald-300 cursor-pointer"
+                                >
+                                  ⚡ ทดสอบ LINE
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -1276,11 +1425,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <tbody className="divide-y divide-slate-100">
                       {users
                         .filter(u => {
+                          const sTerm = (userSearchTerm || '').toLowerCase();
                           const matchesSearch = 
-                            u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                            u.username.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                            u.id.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                            u.position.toLowerCase().includes(userSearchTerm.toLowerCase());
+                            (u.name || '').toLowerCase().includes(sTerm) ||
+                            (u.username || '').toLowerCase().includes(sTerm) ||
+                            (u.id || '').toLowerCase().includes(sTerm) ||
+                            (u.position || '').toLowerCase().includes(sTerm);
                           const matchesBranch = userBranchFilter === 'all' || u.branchId === userBranchFilter;
                           const matchesRole = userRoleFilter === 'all' || u.role === userRoleFilter;
                           return matchesSearch && matchesBranch && matchesRole;
@@ -1318,7 +1468,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="font-mono text-[11px] text-emerald-700 font-semibold block">{u.lineId || '-'}</span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono text-[11px] text-emerald-700 font-semibold">{u.lineId || '-'}</span>
+                                {u.lineId && u.lineId.trim().startsWith('U') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenTestLine(u)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 transition-colors cursor-pointer shadow-2xs shrink-0"
+                                    title="ทดสอบส่งข้อความแจ้งเตือนเข้า LINE นี้ทันที"
+                                  >
+                                    <Send className="w-2.5 h-2.5" />
+                                    <span>ทดสอบ LINE</span>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1.5">
@@ -1639,16 +1802,324 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </span>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                LINE Channel Access Token (Messaging API)
-              </label>
+            {/* LINE Channel Access Token Settings */}
+            <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <MessageSquare className="w-4 h-4 text-emerald-600" />
+                    <span>LINE Channel Access Token (Messaging API สำหรับส่งข้อความแจ้งเตือน)</span>
+                  </label>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    คัดลอกจากแท็บ Messaging API &gt; Channel access token (long-lived) ใน LINE Developers Console
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={verifyTokenLoading || !localSettings.lineChannelAccessToken || localSettings.lineChannelAccessToken.startsWith('MOCK_')}
+                  onClick={handleVerifyLineBot}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>{verifyTokenLoading ? 'กำลังตรวจสอบ...' : '🔍 ตรวจสอบ Token กับบอท'}</span>
+                </button>
+              </div>
+
               <textarea
                 value={localSettings.lineChannelAccessToken}
-                onChange={(e) => setLocalSettings({ ...localSettings, lineChannelAccessToken: e.target.value })}
+                onChange={(e) => setLocalSettings({ ...localSettings, lineChannelAccessToken: e.target.value.trim() })}
                 rows={2}
-                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-mono text-[11px]"
+                placeholder="วาง Long-lived Channel Access Token ที่นี่..."
+                className="w-full px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl font-mono text-[11px] text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
               />
+
+              {/* Bot Info card if verified */}
+              {botInfo && (
+                <div className="p-3 bg-white rounded-xl border border-emerald-300 flex items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    {botInfo.pictureUrl ? (
+                      <img src={botInfo.pictureUrl} alt={botInfo.displayName} className="w-10 h-10 rounded-full border border-emerald-200" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                        <Bot className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <strong className="text-slate-900 text-xs">{botInfo.displayName}</strong>
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                          เชื่อมต่อแล้ว
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono">LINE Basic ID: {botInfo.basicId || '-'}</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-emerald-800 font-medium bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
+                    ✓ พร้อมส่งข้อความแจ้งเตือนหาครูและหัวหน้าสาขา
+                  </span>
+                </div>
+              )}
+
+              {/* LINE Webhook URL for Direct in-chat Approval */}
+              <div className="p-4 bg-indigo-50/80 rounded-2xl border border-indigo-200 text-xs space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <strong className="text-indigo-950 font-bold text-sm flex items-center gap-1.5">
+                      <LinkIcon className="w-4 h-4 text-indigo-600" />
+                      <span>ตั้งค่า Webhook เพื่อให้กด "อนุมัติ" ใน LINE ได้ทันที (ไม่ต้องเข้าเว็บ):</span>
+                    </strong>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={fetchWebhookStatus}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-indigo-200 cursor-pointer shadow-2xs"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${webhookInfo.loading ? 'animate-spin' : ''}`} />
+                      <span>รีเฟรชสถานะ</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Primary Webhook URL Box: Direct Public Webhook (Cloudflare 200 OK) */}
+                {(() => {
+                  const directWebhook = webhookInfo.publicWebhookUrl || 'https://green-sig-cos-remarks.trycloudflare.com/api/line/webhook';
+                  return (
+                    <div className="p-3 bg-white rounded-xl border-2 border-emerald-500 shadow-sm space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Webhook URL สำหรับใส่ใน LINE Developers (กด Verify ผ่าน 200 OK ทันที 100%):</span>
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full">
+                          Public HTTPS (200 OK - ไม่ติด 302)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <code className="text-[11px] font-mono bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200 flex-1 truncate select-all text-emerald-950 font-bold">
+                          {directWebhook}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(directWebhook);
+                            alert('คัดลอก Webhook URL เรียบร้อยแล้ว!\nนำไปวางที่ LINE Developers > Messaging API > Webhook settings แล้วกด Verify ได้ทันที');
+                          }}
+                          className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shrink-0 shadow-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <Copy className="w-4 h-4" />
+                          <span>คัดลอก Webhook URL</span>
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-emerald-800">
+                        ✨ นำ URL ด้านบนนี้ไปวางในหน้า <strong>LINE Developers &gt; Webhook URL</strong> แทน URL เดิมที่ติด 302 แล้วกด <strong>Verify</strong> จะขึ้น <strong>Success 200 OK</strong> ทันที!
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {/* Option 2: Google Apps Script Webhook */}
+                {localSettings.googleAppsScriptUrl && (
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                    <span className="font-semibold text-slate-700 block text-[11px]">หรือใช้ Google Apps Script Webhook URL ของท่าน:</span>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono bg-white p-1.5 rounded border border-slate-200 flex-1 truncate text-slate-600 select-all">
+                        {localSettings.googleAppsScriptUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(localSettings.googleAppsScriptUrl);
+                          alert('คัดลอก Apps Script Webhook URL แล้ว');
+                        }}
+                        className="px-2.5 py-1 text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-800 rounded cursor-pointer font-medium"
+                      >
+                        คัดลอก
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dev Environment Notice */}
+                <div className="p-2.5 bg-amber-50/90 rounded-xl border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>สาเหตุที่ใส่ URL ais-dev-... แล้ว LINE แจ้งเตือน Error 302 Found:</strong>
+                    <p className="text-amber-800 mt-0.5 leading-relaxed">
+                      เนื่องจาก URL ที่ขึ้นต้นด้วย <code className="bg-amber-100 px-1 py-0.2 rounded font-mono">ais-dev-...</code> เป็นระบบพรีวิวทดสอบภายในของ Google Cloud ที่มีระบบรักษาความปลอดภัยดักจับ (Cookie Redirect) เซิร์ฟเวอร์ของ LINE จึงไม่สามารถเชื่อมต่อได้โดยตรง <strong>กรุณาใช้ URL ของ Google Apps Script ด้านบนแทน</strong> ซึ่งเป็นเซิร์ฟเวอร์สาธารณะของ Google ที่ LINE ตรวจสอบผ่าน 200 OK ทันทีครับ
+                    </p>
+                  </div>
+                </div>
+
+                {/* Live Webhook Status Card */}
+                <div className="p-3 bg-white/90 rounded-xl border border-indigo-100 space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 font-medium">สัญญาณ Webhook ที่เซิร์ฟเวอร์ได้รับทั้งหมด:</span>
+                    <span className="font-bold font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                      {webhookInfo.totalEvents} ครั้ง
+                    </span>
+                  </div>
+                  {webhookInfo.lastEvent ? (
+                    <div className="text-[11px] text-slate-700 bg-emerald-50/70 p-2 rounded-lg border border-emerald-200 flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-emerald-900 block font-semibold">
+                          สัญญาณล่าสุด: {webhookInfo.lastEvent.summary || 'ได้รับ Webhook สำเร็จ'}
+                        </strong>
+                        <span className="text-[10px] text-emerald-700 font-mono">
+                          {new Date(webhookInfo.lastEvent.timestamp).toLocaleString('th-TH')}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>ยังไม่พบสัญญาณ Webhook จาก LINE (กรุณากดปุ่ม <strong>Verify</strong> ใน LINE Developers Console)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Simulation Tool (Test Webhook Approval Live) */}
+                <div className="p-3 bg-slate-900 text-white rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-amber-300">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>เครื่องมือทดสอบ: จำลองการกดปุ่ม "อนุมัติ" ผ่าน LINE</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">
+                      ทดสอบว่าสถานะหน้าเว็บปรับเปลี่ยนทันทีหรือไม่
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 items-center">
+                    <select
+                      value={simulateReqId}
+                      onChange={(e) => setSimulateReqId(e.target.value)}
+                      className="flex-1 w-full px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-hidden focus:ring-1 focus:ring-amber-400 font-mono"
+                    >
+                      <option value="">-- เลือกรหัสคำขอที่ต้องการทดสอบอนุมัติ --</option>
+                      {requests.filter(r => r.status === 'pending').map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.id} - {r.userName} ({r.reason?.slice(0, 20)}...) [รออนุมัติ]
+                        </option>
+                      ))}
+                      {requests.filter(r => r.status === 'approved').map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.id} - {r.userName} [อนุมัติแล้ว]
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      disabled={simulateLoading || !simulateReqId}
+                      onClick={() => handleSimulateWebhookApprove()}
+                      className="w-full sm:w-auto px-4 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 flex items-center justify-center gap-1.5"
+                    >
+                      {simulateLoading ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>กำลังจำลอง...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>⚡ ทดสอบกดอนุมัติทันที</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {simulateResult && (
+                    <div className={`p-2 rounded-lg text-xs font-medium ${simulateResult.success ? 'bg-emerald-900/60 text-emerald-200 border border-emerald-700' : 'bg-rose-900/60 text-rose-200 border border-rose-700'}`}>
+                      {simulateResult.message}
+                    </div>
+                  )}
+                </div>
+
+                {/* 302 Found Notice & Recommended Google Apps Script Webhook URL */}
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>หากกด Verify ใน LINE แล้วขึ้น Error 302 Found:</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    เนื่องจาก URL <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900">ais-dev-...</code> เป็นระบบพรีวิวทดสอบของ Google Cloud ที่มีระบบตรวจเช็คสิทธิ์ (Cookie Check) บ็อตของ LINE จึงได้รับรหัส 302 <strong>วิธีแก้ไขที่ถูกต้องและมาตรฐาน 100%:</strong> ให้ใช้ <strong>Google Apps Script Webhook URL</strong> แทน (Google Apps Script จะตอบกลับ 200 OK ทันที)
+                  </p>
+                  {localSettings.googleAppsScriptUrl && (
+                    <div className="pt-1 flex flex-col sm:flex-row gap-1.5 items-stretch sm:items-center">
+                      <span className="text-[11px] font-semibold text-slate-700 shrink-0">URL Apps Script ของท่าน:</span>
+                      <code className="text-[10px] font-mono bg-white px-2 py-1 rounded border border-amber-300 truncate flex-1 text-slate-800 select-all">
+                        {localSettings.googleAppsScriptUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(localSettings.googleAppsScriptUrl);
+                          alert('คัดลอก Google Apps Script Webhook URL แล้ว!\nนำไปวางใน LINE Developers > Webhook URL แล้วกด Verify ได้ทันที');
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded cursor-pointer shrink-0 transition-colors"
+                      >
+                        คัดลอกไปใส่ใน LINE
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Important Checklist for LINE Developers and LINE OA Manager */}
+                <div className="p-3 bg-white rounded-xl border border-indigo-200 space-y-2 text-[11px]">
+                  <strong className="text-slate-900 block font-bold text-xs flex items-center gap-1 text-indigo-900">
+                    <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>วิธีตั้งค่าให้กดปุ่มใน LINE แล้วสถานะบนเว็บเปลี่ยนเป็น "อนุมัติแล้ว" อัตโนมัติ:</span>
+                  </strong>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                      <span className="font-bold text-indigo-950 block">1. ใน LINE Developers Console:</span>
+                      <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
+                        <li>เปิด Channel &gt; แท็บ <strong>Messaging API</strong></li>
+                        <li>เลื่อนลงที่ <strong>Webhook settings</strong></li>
+                        <li>วาง Webhook URL ด้านบน</li>
+                        <li>กดปุ่ม <strong>Verify</strong> (ต้องขึ้น <em>Success</em>)</li>
+                        <li>สลับสวิตช์ <strong>Use webhook เป็น ON</strong> (สำคัญมาก!)</li>
+                      </ul>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                      <span className="font-bold text-emerald-950 block">2. ใน LINE Official Account Manager:</span>
+                      <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
+                        <li>ไปที่ <strong>chat.line.biz</strong> &gt; บัญชีบอทของท่าน</li>
+                        <li>กด <strong>ตั้งค่า (Settings)</strong> มุมขวาบน</li>
+                        <li>เลือก <strong>ตั้งค่าการตอบกลับ (Response settings)</strong></li>
+                        <li>โหมดการตอบกลับ: เลือก <strong>บ็อต (Bot)</strong></li>
+                        <li>Webhook: เลือก <strong>เปิด (Enabled)</strong></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Help & Explanation Guide */}
+              <div className="text-[11px] text-slate-600 bg-white p-3.5 rounded-xl border border-emerald-100 space-y-1.5">
+                <p className="font-bold text-slate-800 flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>3 ขั้นตอนเชื่อมต่อเพื่อให้ LINE ของหัวหน้าสาขาได้รับแจ้งเตือน:</span>
+                </p>
+                <ol className="list-decimal pl-4 space-y-1 text-slate-600">
+                  <li>
+                    <strong>รับ Channel Access Token:</strong> ในเว็บ LINE Developers &gt; Channel ของท่าน &gt; แท็บ <em>Messaging API</em> &gt; เลื่อนลงล่างสุดกด Issue / Copy Token นำมาวางในช่องด้านบนนี้
+                  </li>
+                  <li>
+                    <strong>เพิ่มเพื่อนกับ LINE Official Account:</strong> ให้หัวหน้าสาขาเปิดแอป LINE ในมือถือ สแกน QR หรือแอดเพื่อนกับบัญชี LINE Official Account ของโรงเรียน <em>(หากไม่แอดเพื่อน LINE API จะไม่อนุญาตให้ระบบส่ง Push Message หาได้)</em>
+                  </li>
+                  <li>
+                    <strong>ใส่ User ID:</strong> ในแท็บ "ครูและผู้ใช้งาน" &gt; กดแก้ไขหัวหน้าสาขา &gt; ใส่รหัส User ID (ขึ้นต้นด้วย U...) ซึ่งท่านใส่เรียบร้อยแล้ว แล้วกดปุ่ม <strong>"⚡ ทดสอบส่ง LINE"</strong> ได้เลย!
+                  </li>
+                </ol>
+              </div>
             </div>
 
             <div>
@@ -2178,16 +2649,115 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  LINE ID (สำหรับส่งข้อความแจ้งเตือน)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700">
+                    LINE ID (สำหรับส่งข้อความแจ้งเตือน)
+                  </label>
+                  {editFormData.lineId && editFormData.lineId.trim().startsWith('U') && (
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
+                      ✓ รูปแบบ LINE User ID ถูกต้อง
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={editFormData.lineId || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, lineId: e.target.value })}
-                  placeholder="U_LINE_XXXX"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-[11px] text-emerald-700 bg-white"
+                  onChange={(e) => setEditFormData({ ...editFormData, lineId: e.target.value.trim() })}
+                  placeholder="เช่น U81778d734346f14e047e07cb37d1ccd1"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-[11px] text-emerald-800 bg-white"
                 />
+
+                {/* Real-time LINE Test Panel inside Edit Modal */}
+                <div className="mt-2.5 p-3 bg-slate-50 rounded-2xl border border-slate-200/90 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[11px] text-slate-700 font-semibold flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                      ทดสอบส่งข้อความแจ้งเตือนเข้า LINE นี้
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!editFormData.lineId || !editFormData.lineId.trim().startsWith('U') || testLineStatus?.loading}
+                      onClick={async () => {
+                        if (!editFormData.lineId) return;
+                        await handleExecuteLineTest(editFormData.lineId, editFormData.name);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>{testLineStatus?.loading ? 'กำลังส่ง...' : '⚡ ทดสอบส่งข้อความเข้า LINE นี้'}</span>
+                    </button>
+                  </div>
+
+                  {/* Feedback Result */}
+                  {testLineStatus && (
+                    <div className={`p-2.5 rounded-xl text-xs font-medium border animate-in fade-in ${
+                      testLineStatus.success
+                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                        : testLineStatus.code === 'TOKEN_REQUIRED'
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : 'bg-rose-50 text-rose-900 border-rose-300'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        {testLineStatus.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        )}
+                        <div className="flex-1 space-y-1.5">
+                          <p className="font-bold">{testLineStatus.message}</p>
+                          {testLineStatus.code === 'TOKEN_REQUIRED' && (
+                            <div className="mt-2 pt-2 border-t border-amber-200/80 space-y-1.5">
+                              <label className="text-[11px] block text-amber-900 font-bold">
+                                🔑 วาง LINE Channel Access Token เพื่อทดสอบและบันทึกทันที:
+                              </label>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  placeholder="วาง Channel Access Token จาก LINE Developers..."
+                                  value={tokenInputForTest}
+                                  onChange={(e) => setTokenInputForTest(e.target.value.trim())}
+                                  className="flex-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono text-[11px]"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!tokenInputForTest}
+                                  onClick={async () => {
+                                    const updatedSettings = { ...localSettings, lineChannelAccessToken: tokenInputForTest };
+                                    setLocalSettings(updatedSettings);
+                                    onUpdateSettings(updatedSettings);
+                                    if (editFormData.lineId) {
+                                      await handleExecuteLineTest(editFormData.lineId, editFormData.name, tokenInputForTest);
+                                    }
+                                  }}
+                                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50"
+                                >
+                                  บันทึกและส่งทันที
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Clarification Tips */}
+                  <div className="text-[11px] text-slate-500 space-y-1 pt-1 border-t border-slate-200/80">
+                    <p className="font-bold text-slate-700">💡 ทำไมใส่ User ID แล้วไม่ได้รับแจ้งเตือน LINE?</p>
+                    <p className="flex items-start gap-1">
+                      <span>1.</span>
+                      <span><strong>ต้องแอดเพื่อนก่อน:</strong> บัญชี LINE นี้ต้องกดเพิ่มเพื่อนกับ LINE Official Account (Bot) ของโรงเรียนก่อน</span>
+                    </p>
+                    <p className="flex items-start gap-1">
+                      <span>2.</span>
+                      <span><strong>ต้องมี Token:</strong> ต้องกรอก Channel Access Token (long-lived) จาก LINE Developers ในเมนู "การตั้งค่าระบบ"</span>
+                    </p>
+                    <p className="flex items-start gap-1">
+                      <span>3.</span>
+                      <span><strong>User ID ถูกต้องแล้ว:</strong> รหัส {editFormData.lineId || 'U...'} คือ User ID สำหรับรับ Push Notification โดยเฉพาะ</span>
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
@@ -2247,6 +2817,136 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <Trash2 className="w-4 h-4" />
                 <span>ลบผู้ใช้นี้ทันที</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Standalone LINE Notification Test Modal */}
+      {testLineUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    ทดสอบส่งข้อความแจ้งเตือน LINE
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {testLineUser.name} ({testLineUser.position})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setTestLineUser(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1 font-mono text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">ผู้รับ:</span>
+                  <span className="font-bold text-slate-800 font-sans">{testLineUser.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">สาขาวิชา:</span>
+                  <span className="text-slate-700 font-sans">{testLineUser.branchName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">บทบาท:</span>
+                  <span className="text-emerald-700 font-sans font-semibold">
+                    {testLineUser.role === 'approver' ? 'หัวหน้าสาขา (ผู้อนุมัติ)' : testLineUser.role}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-200">
+                  <span className="text-slate-400">LINE User ID:</span>
+                  <span className="text-emerald-800 font-bold">{testLineUser.lineId || 'ยังไม่ได้ระบุ'}</span>
+                </div>
+              </div>
+
+              {/* Token Input or Status */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  LINE Channel Access Token:
+                </label>
+                <input
+                  type="text"
+                  placeholder="วาง Channel Access Token จาก LINE Developers..."
+                  value={tokenInputForTest}
+                  onChange={(e) => setTokenInputForTest(e.target.value.trim())}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-[11px] bg-white text-slate-800"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  คัดลอกจากแท็บ Messaging API ใน LINE Developers Console
+                </span>
+              </div>
+
+              {/* Test Status Banner */}
+              {testLineStatus && (
+                <div className={`p-3 rounded-xl border animate-in fade-in ${
+                  testLineStatus.success
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                    : testLineStatus.code === 'TOKEN_REQUIRED'
+                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                    : 'bg-rose-50 text-rose-900 border-rose-300'
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {testLineStatus.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 space-y-1">
+                      <p className="font-bold">{testLineStatus.message}</p>
+                      {testLineStatus.success && (
+                        <p className="text-[11px] text-emerald-700">
+                          📱 กรุณาเปิดแอป LINE ในโทรศัพท์ของ {testLineUser.name} เพื่อตรวจสอบข้อความแจ้งเตือน
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Important Requirements Checklist */}
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-[11px] text-amber-900 space-y-1">
+                <p className="font-bold">⚠️ สิ่งสำคัญที่ต้องทำเพื่อให้ LINE แจ้งเตือนสำเร็จ:</p>
+                <p>1. บัญชี LINE นี้ต้อง <strong>"เพิ่มเพื่อน"</strong> กับ LINE Official Account ของโรงเรียนก่อน</p>
+                <p>2. ต้องมี <strong>Channel Access Token (long-lived)</strong> ที่ถูกต้องจาก LINE Developers</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setTestLineUser(null)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-medium cursor-pointer"
+                >
+                  ปิด
+                </button>
+                <button
+                  type="button"
+                  disabled={testLineStatus?.loading || !testLineUser.lineId}
+                  onClick={async () => {
+                    if (tokenInputForTest && tokenInputForTest !== localSettings.lineChannelAccessToken) {
+                      const updated = { ...localSettings, lineChannelAccessToken: tokenInputForTest };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }
+                    await handleExecuteLineTest(testLineUser.lineId!, testLineUser.name, tokenInputForTest || localSettings.lineChannelAccessToken);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>{testLineStatus?.loading ? 'กำลังส่งแจ้งเตือน...' : 'ส่งข้อความทดสอบทันที'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

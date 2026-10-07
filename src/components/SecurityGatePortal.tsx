@@ -86,13 +86,19 @@ export const SecurityGatePortal: React.FC<SecurityGatePortalProps> = ({
 
     const cleanTarget = target.toLowerCase();
 
-    const found = requests.find(r => 
-      r.id.toLowerCase() === cleanTarget ||
-      r.qrToken.toLowerCase() === cleanTarget ||
-      r.userName.toLowerCase().includes(cleanTarget) ||
-      cleanTarget.includes(r.id.toLowerCase()) ||
-      cleanTarget.includes(r.qrToken.toLowerCase())
-    );
+    const found = requests.find(r => {
+      if (!r) return false;
+      const rId = (r.id || '').toLowerCase();
+      const rToken = (r.qrToken || '').toLowerCase();
+      const rUser = (r.userName || '').toLowerCase();
+      return (
+        rId === cleanTarget ||
+        rToken === cleanTarget ||
+        rUser.includes(cleanTarget) ||
+        cleanTarget.includes(rId) ||
+        cleanTarget.includes(rToken)
+      );
+    });
 
     if (found) {
       setScannedRequest(found);

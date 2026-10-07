@@ -95,12 +95,13 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
       matchesStatus = r.status === 'pending';
     }
 
+    const search = historySearchTerm.toLowerCase();
     const matchesSearch = 
-      r.userName.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-      r.destination.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-      r.reason.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-      r.id.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-      (r.branchName && r.branchName.toLowerCase().includes(historySearchTerm.toLowerCase()));
+      (r.userName || '').toLowerCase().includes(search) ||
+      (r.destination || '').toLowerCase().includes(search) ||
+      (r.reason || '').toLowerCase().includes(search) ||
+      (r.id || '').toLowerCase().includes(search) ||
+      (r.branchName && r.branchName.toLowerCase().includes(search));
 
     return matchesStatus && matchesSearch;
   });

@@ -83,14 +83,78 @@ export default function App() {
   const [printSlipReq, setPrintSlipReq] = useState<ExitRequest | null>(null);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
 
+  // Quick Review Modal triggered by LINE Flex buttons (?action=approve|reject&reqId=...)
+  const [lineReviewState, setLineReviewState] = useState<{
+    request: ExitRequest;
+    action: 'approve' | 'reject';
+  } | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+
+  // 1-Click Direct Approval Modal Result (Triggered by LINE in-app webview button)
+  const [directActionResult, setDirectActionResult] = useState<{
+    request?: ExitRequest;
+    reqId: string;
+    action: 'approve' | 'reject';
+    success: boolean;
+    message: string;
+  } | null>(null);
+
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Check if opened via scanned QR Code URL (?verify=REQ-...)
+  // Auto-sync with Server & LINE Webhook Poll (every 3 seconds)
+  useEffect(() => {
+    let isMounted = true;
+
+    const performSync = async () => {
+      try {
+        const syncRes = await storage.syncWithServer();
+        if (isMounted && syncRes.changed) {
+          setRequests(storage.getRequests());
+          setLogs(storage.getLogs());
+
+          if (syncRes.newlyApproved && syncRes.newlyApproved.length > 0) {
+            syncRes.newlyApproved.forEach(appr => {
+              showToast(`🎉 คำขอ ${appr.id} (${appr.userName}) ได้รับการอนุมัติผ่าน LINE เรียบร้อยแล้ว!`, 'success');
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    // Immediate sync on load
+    performSync();
+
+    // Poll every 3 seconds so approvals in LINE reflect live on screen
+    const interval = setInterval(performSync, 3000);
+
+    // Sync on tab focus / visibilitychange
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        performSync();
+      }
+    };
+    window.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', performSync);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', performSync);
+    };
+  }, []);
+
+  // Check if opened via scanned QR Code URL (?verify=REQ-...) or LINE Flex button (?action=approve|reject&reqId=...)
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const action = urlParams.get('action');
+      const reqId = urlParams.get('reqId');
       const verifyId = urlParams.get('verify');
+
       if (verifyId && requests.length > 0) {
         const found = requests.find(r => 
           r.id.toLowerCase() === verifyId.toLowerCase() || 
@@ -100,6 +164,82 @@ export default function App() {
           setPrintSlipReq(found);
           showToast(`สแกนพบบัตรอนุญาต: ${found.id} ของ ${found.userName}`, 'success');
         }
+      }
+
+      if (reqId && (action === 'direct_approve' || action === 'approve')) {
+        const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
+        const approverUser = users.find(u => u.role === 'approver' && (found ? u.branchId === found.branchId : true)) || currentUser;
+        
+        // Notify server status endpoint immediately
+        fetch(`/api/requests/${encodeURIComponent(reqId)}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'approved', actorName: approverUser?.name || 'หัวหน้าสาขา' })
+        }).catch(() => {});
+
+        const updated = storage.updateRequestStatus(reqId, 'approved', approverUser);
+        if (updated) {
+          lineService.sendTeacherStatusNotification(updated, 'approved', approverUser.name);
+          refreshAllData();
+          setDirectActionResult({
+            request: updated,
+            reqId,
+            action: 'approve',
+            success: true,
+            message: `🎉 อนุมัติคำขอ ${reqId} ของ ${updated.userName} เรียบร้อยแล้ว!`
+          });
+          showToast(`🎉 อนุมัติคำขอ ${reqId} สำเร็จแล้ว!`, 'success');
+        } else {
+          // If request was created on another device, sync with server
+          storage.syncWithServer().then(() => {
+            refreshAllData();
+            const reFound = storage.getRequestById(reqId);
+            setDirectActionResult({
+              request: reFound,
+              reqId,
+              action: 'approve',
+              success: true,
+              message: `🎉 อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว!`
+            });
+            showToast(`🎉 อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว!`, 'success');
+          }).catch(() => {});
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (reqId && (action === 'direct_reject' || action === 'reject')) {
+        const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
+        const approverUser = users.find(u => u.role === 'approver' && (found ? u.branchId === found.branchId : true)) || currentUser;
+        
+        fetch(`/api/requests/${encodeURIComponent(reqId)}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'rejected', actorName: approverUser?.name || 'หัวหน้าสาขา', rejectionReason: 'ไม่อนุมัติผ่าน LINE' })
+        }).catch(() => {});
+
+        const updated = storage.updateRequestStatus(reqId, 'rejected', approverUser, 'ไม่อนุมัติผ่าน LINE');
+        if (updated) {
+          refreshAllData();
+          setDirectActionResult({
+            request: updated,
+            reqId,
+            action: 'reject',
+            success: true,
+            message: `❌ บันทึกไม่อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว`
+          });
+          showToast(`บันทึกไม่อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว`, 'info');
+        } else {
+          storage.syncWithServer().then(() => {
+            refreshAllData();
+            const reFound = storage.getRequestById(reqId);
+            setDirectActionResult({
+              request: reFound,
+              reqId,
+              action: 'reject',
+              success: true,
+              message: `❌ บันทึกไม่อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว`
+            });
+          }).catch(() => {});
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch {
       // ignore
@@ -134,39 +274,47 @@ export default function App() {
     showToast(`สลับไปยังบัญชี: ${user.name} (${user.position})`, 'info');
   };
 
-  // 1. Submit Request (LINE Quota-Saving Policy: max 2 messages per request)
-  const handleSubmitRequest = (formData: any) => {
+  // 1. Submit Request
+  const handleSubmitRequest = async (formData: any) => {
     const newReq = storage.createRequest(formData);
 
     if (newReq.status === 'approved') {
       // Self-approved by Department Head immediately
-      lineService.sendTeacherStatusNotification(newReq, 'approved', `${newReq.userName} (หัวหน้าสาขา - อนุมัติตนเอง)`);
+      await lineService.sendTeacherStatusNotification(newReq, 'approved', `${newReq.userName} (หัวหน้าสาขา - อนุมัติตนเอง)`);
       refreshAllData();
       showToast(`⚡ ยื่นและอนุมัติตัวเองสำเร็จ! หัวหน้าสาขา ${newReq.userName} ได้รับอนุมัติเรียบร้อย พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
-    } else if (newReq.hasClasses && newReq.substituteTeacherName) {
-      // If there are classes: Substitute teacher must acknowledge in the web system first.
-      // Do NOT send LINE message to substitute teacher (saves LINE quota).
-      // Line Message 1 of 2 will be triggered when substitute teacher acknowledges in web app.
-      refreshAllData();
-      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! รอให้ครูผู้สอนแทน (${newReq.substituteTeacherName}) กดรับทราบในระบบก่อน จึงจะส่ง LINE แจ้งเตือนผู้อนุมัติ (โควต้า 2 ข้อความ/คำขอ)`, 'info');
     } else {
-      // If NO classes: Send LINE Message 1 of 2 directly to Approver
-      lineService.sendApproverNotification(newReq);
+      // Always deliver LINE notification to Approver so department head gets alerted immediately!
       refreshAllData();
-      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE ข้อความที่ 1/2 ไปยังผู้อนุมัติ (${newReq.assignedApproverName}) เรียบร้อยแล้ว`, 'success');
+      const lineRes = await lineService.sendApproverNotification(newReq);
+      refreshAllData();
+
+      if (lineRes.success) {
+        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เรียบร้อยแล้ว 📲`, 'success');
+      } else {
+        if (lineRes.code === 'TOKEN_REQUIRED') {
+          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! (บันทึกในระบบแล้ว แต่ยังไม่ได้กรอก LINE Channel Access Token ในการตั้งค่าระบบ จึงยังไม่ได้ส่งเข้า LINE)`, 'info');
+        } else {
+          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! (LINE แจ้งเตือน: ${lineRes.message})`, 'info');
+        }
+      }
     }
   };
 
   // 1.1 Acknowledge Substitute Teaching (In-System Web Action)
   // When acknowledged in web: Triggers LINE Message 1 of 2 to Department Head or Deputy Director!
-  const handleAcknowledgeSubstitute = (requestId: string) => {
+  const handleAcknowledgeSubstitute = async (requestId: string) => {
     const updated = storage.acknowledgeSubstitute(requestId, currentUser);
     if (updated) {
-      // Trigger LINE Message 1 of 2 to Approver now that substitute teaching is confirmed
-      lineService.sendApproverNotification(updated);
+      // Trigger LINE Message to Approver that substitute teaching is confirmed
+      const lineRes = await lineService.sendApproverNotification(updated);
       refreshAllData();
       const approverTitle = updated.assignedApproverId === 'usr-admin' ? 'รอง ผอ.ฝ่ายวิชาการ' : 'หัวหน้าสาขา';
-      showToast(`ครูผู้สอนแทนกดรับทราบในระบบเว็บแล้ว! ส่ง LINE ข้อความที่ 1/2 ไปยัง${approverTitle} (${updated.assignedApproverName}) เรียบร้อยแล้ว`, 'success');
+      if (lineRes.success) {
+        showToast(`ครูผู้สอนแทนกดรับทราบแล้ว! ส่ง LINE แจ้งเตือนไปยัง${approverTitle} (${updated.assignedApproverName}) เรียบร้อยแล้ว`, 'success');
+      } else {
+        showToast(`ครูผู้สอนแทนกดรับทราบแล้ว! (ส่งต่อ ${approverTitle})`, 'info');
+      }
     }
   };
 
@@ -179,23 +327,27 @@ export default function App() {
     }
   };
 
-  // 2. Approve Request (Triggers LINE Message 2 of 2 back to Teacher)
-  const handleApproveRequest = (requestId: string) => {
+  // 2. Approve Request (Triggers LINE Message back to Teacher)
+  const handleApproveRequest = async (requestId: string) => {
     const updated = storage.updateRequestStatus(requestId, 'approved', currentUser);
     if (updated) {
-      lineService.sendTeacherStatusNotification(updated, 'approved', currentUser.name);
+      const lineRes = await lineService.sendTeacherStatusNotification(updated, 'approved', currentUser.name);
       refreshAllData();
-      showToast(`อนุมัติคำขอ ${updated.id} สำเร็จ! ส่ง LINE ข้อความที่ 2/2 แจ้งผลกลับไปยังครู ${updated.userName} เรียบร้อย`, 'success');
+      if (lineRes.success) {
+        showToast(`อนุมัติคำขอ ${updated.id} สำเร็จ! ส่ง LINE แจ้งผลกลับไปยังครู ${updated.userName} เรียบร้อย 📲`, 'success');
+      } else {
+        showToast(`อนุมัติคำขอ ${updated.id} สำเร็จ! ออกบัตรผ่าน QR Code เรียบร้อยแล้ว`, 'success');
+      }
     }
   };
 
-  // 3. Reject Request (Triggers LINE Message 2 of 2 back to Teacher)
-  const handleRejectRequest = (requestId: string, reason: string) => {
+  // 3. Reject Request (Triggers LINE Message back to Teacher)
+  const handleRejectRequest = async (requestId: string, reason: string) => {
     const updated = storage.updateRequestStatus(requestId, 'rejected', currentUser, reason);
     if (updated) {
-      lineService.sendTeacherStatusNotification(updated, 'rejected', currentUser.name, reason);
+      await lineService.sendTeacherStatusNotification(updated, 'rejected', currentUser.name, reason);
       refreshAllData();
-      showToast(`ไม่อนุมัติคำขอ ${updated.id} ส่ง LINE ข้อความที่ 2/2 แจ้งผลกลับไปยังครู ${updated.userName} เรียบร้อย`, 'error');
+      showToast(`ไม่อนุมัติคำขอ ${updated.id} บันทึกผลเรียบร้อยแล้ว`, 'error');
     }
   };
 
@@ -430,6 +582,256 @@ export default function App() {
             showToast('บันทึก Google Apps Script Web App URL สำเร็จ!', 'success');
           }}
         />
+      )}
+
+      {/* LINE Action Review Modal (when opened from LINE Flex Button) */}
+      {lineReviewState && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-white shadow-xs ${
+                  lineReviewState.action === 'approve' ? 'bg-emerald-600' : 'bg-rose-600'
+                }`}>
+                  {lineReviewState.action === 'approve' ? (
+                    <CheckCircle className="w-5 h-5" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {lineReviewState.action === 'approve'
+                      ? 'ยืนยันการอนุมัติคำขอออกนอกสถานศึกษา'
+                      : 'พิจารณาไม่อนุมัติคำขอออกนอกสถานศึกษา'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    รหัสคำขอ: {lineReviewState.request.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setLineReviewState(null);
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Request Details */}
+            <div className="space-y-3 text-xs mb-4">
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">👨‍🏫 ครูผู้ขอ:</span>
+                  <strong className="text-slate-900 text-sm">{lineReviewState.request.userName}</strong>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">🏫 สาขาวิชา:</span>
+                  <span className="text-slate-800 font-semibold">{lineReviewState.request.branchName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">📅 วันที่ขอออก:</span>
+                  <span className="text-slate-800">{lineReviewState.request.exitDate}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">🕐 ช่วงเวลา:</span>
+                  <span className="text-indigo-700 font-semibold">{lineReviewState.request.exitTime} – {lineReviewState.request.returnTime} น.</span>
+                </div>
+                <div className="pt-2 border-t border-slate-200/80">
+                  <span className="text-slate-500 font-medium block mb-0.5">📍 สถานที่ไป:</span>
+                  <p className="text-slate-800">{lineReviewState.request.destination}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-medium block mb-0.5">📝 เหตุผลความจำเป็น:</span>
+                  <p className="text-slate-800">{lineReviewState.request.reason}</p>
+                </div>
+              </div>
+
+              {/* Status Notice if already reviewed */}
+              {lineReviewState.request.status === 'approved' && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 font-semibold flex items-center justify-between">
+                  <span>✅ คำขอนี้ได้รับการอนุมัติแล้ว</span>
+                  <button
+                    onClick={() => {
+                      setPrintSlipReq(lineReviewState.request);
+                      setLineReviewState(null);
+                    }}
+                    className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700"
+                  >
+                    ดูบัตรอนุญาต
+                  </button>
+                </div>
+              )}
+
+              {lineReviewState.request.status === 'rejected' && (
+                <div className="p-3 bg-rose-50 text-rose-800 rounded-xl border border-rose-200 font-semibold">
+                  <span>❌ คำขอนี้ไม่อนุมัติ (เหตุผล: {lineReviewState.request.rejectionReason || 'ไม่ระบุ'})</span>
+                </div>
+              )}
+
+              {/* Rejection reason input if action is reject */}
+              {lineReviewState.request.status === 'pending' && lineReviewState.action === 'reject' && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    เหตุผลที่ไม่อนุมัติคำขอ:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={rejectReasonInput}
+                    onChange={(e) => setRejectReasonInput(e.target.value)}
+                    placeholder="ระบุเหตุผล เช่น ติดภาระงานเร่งด่วนในสาขา..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Footer buttons */}
+            {lineReviewState.request.status === 'pending' ? (
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLineReviewState(null);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-medium cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+
+                {lineReviewState.action === 'approve' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setLineReviewState({ ...lineReviewState, action: 'reject' })}
+                      className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl font-medium cursor-pointer"
+                    >
+                      เปลี่ยนเป็นไม่อนุมัติ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const targetId = lineReviewState.request.id;
+                        setLineReviewState(null);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        await handleApproveRequest(targetId);
+                      }}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer shadow-md flex items-center gap-1.5"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>ยืนยันอนุมัติคำขอทันที</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setLineReviewState({ ...lineReviewState, action: 'approve' })}
+                      className="px-3 py-2 text-emerald-600 hover:bg-emerald-50 rounded-xl font-medium cursor-pointer"
+                    >
+                      เปลี่ยนเป็นอนุมัติ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const targetId = lineReviewState.request.id;
+                        const reason = rejectReasonInput || 'ไม่สะดวกอนุมัติ';
+                        setLineReviewState(null);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        await handleRejectRequest(targetId, reason);
+                      }}
+                      className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold cursor-pointer shadow-md flex items-center gap-1.5"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      <span>ยืนยันไม่อนุมัติ</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex justify-end pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLineReviewState(null);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }}
+                  className="px-5 py-2 bg-slate-800 text-white rounded-xl font-bold cursor-pointer"
+                >
+                  ปิดหน้าต่าง
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Instant 1-Click LINE Approval Confirmation Modal */}
+      {directActionResult && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border-2 border-emerald-400 animate-in zoom-in-95">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-md ${directActionResult.action === 'approve' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+              {directActionResult.action === 'approve' ? (
+                <CheckCircle className="w-10 h-10" />
+              ) : (
+                <AlertCircle className="w-10 h-10" />
+              )}
+            </div>
+
+            <div>
+              <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
+                ดำเนินการสำเร็จผ่าน LINE
+              </span>
+              <h3 className="text-xl font-black text-slate-900 mt-2">
+                {directActionResult.action === 'approve' ? '✅ บันทึกอนุมัติคำขอเรียบร้อยแล้ว' : '❌ บันทึกไม่อนุมัติคำขอ'}
+              </h3>
+              <p className="text-xs font-mono font-semibold text-purple-700 mt-1">
+                รหัสคำขอ: {directActionResult.reqId}
+              </p>
+            </div>
+
+            {directActionResult.request && (
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-left text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">ครูผู้ขอ:</span>
+                  <strong className="text-slate-800">{directActionResult.request.userName}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">สาขาวิชา:</span>
+                  <span className="font-semibold text-slate-700">{directActionResult.request.branchName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">สถานที่:</span>
+                  <span className="font-semibold text-slate-700 truncate max-w-[200px]">{directActionResult.request.destination}</span>
+                </div>
+                <div className="flex justify-between pt-1.5 border-t border-slate-200">
+                  <span className="text-slate-500">สถานะล่าสุด:</span>
+                  <span className={`font-black px-2.5 py-0.5 rounded border text-xs ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-300' : 'text-rose-700 bg-rose-50 border-rose-300'}`}>
+                    {directActionResult.action === 'approve' ? 'อนุมัติแล้ว (Approved)' : 'ไม่อนุมัติ (Rejected)'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+              {directActionResult.action === 'approve'
+                ? '💡 ระบบหน้าเว็บและ รปภ. ได้รับสถานะ "อนุมัติแล้ว" อัตโนมัติทันที พร้อมส่งแจ้งเตือนออกบัตรผ่าน QR Code แก่ครูเรียบร้อยแล้วครับ'
+                : '💡 ได้บันทึกสถานะไม่อนุมัติลงในระบบเรียบร้อยแล้ว'}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setDirectActionResult(null)}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md cursor-pointer transition-all"
+            >
+              เสร็จสิ้น / ปิดหน้านี้
+            </button>
+          </div>
+        </div>
       )}
 
     </div>

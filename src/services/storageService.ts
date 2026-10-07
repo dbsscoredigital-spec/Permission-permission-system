@@ -194,7 +194,7 @@ export class StorageService {
   }
 
   // Automatically find approver by branch (department head can self-approve)
-  public getApproverForBranch(branchId: string, requesterUserId?: string): { approverId: string; approverName: string } {
+  public getApproverForBranch(branchId: string, requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
     const branches = this.getBranches();
     const branch = branches.find(b => b.id === branchId || b.name === branchId);
     const users = this.getUsers();
@@ -205,25 +205,63 @@ export class StorageService {
     if (requester && (requester.role === 'approver' || (branch && branch.approverUserId === requester.id))) {
       return {
         approverId: requester.id,
-        approverName: `${requester.name} (${requester.position} - อนุมัติตนเอง)`
+        approverName: `${requester.name} (${requester.position} - อนุมัติตนเอง)`,
+        lineId: requester.lineId
       };
     }
 
-    if (branch) {
-      return { approverId: branch.approverUserId, approverName: branch.approverName };
+    // 1. Look for active user with 'approver' role in this branch
+    const branchApproverUser = users.find(u => (u.branchId === branchId || (branch && u.branchName === branch.name)) && u.role === 'approver');
+    if (branchApproverUser) {
+      return {
+        approverId: branchApproverUser.id,
+        approverName: branchApproverUser.name + ' (หัวหน้าสาขา' + branchApproverUser.branchName + ')',
+        lineId: branchApproverUser.lineId
+      };
     }
+
+    // 2. Look by branch.approverUserId
+    if (branch) {
+      const u = users.find(user => user.id === branch.approverUserId);
+      return { 
+        approverId: branch.approverUserId, 
+        approverName: branch.approverName,
+        lineId: u?.lineId
+      };
+    }
+
     // Fallback to general head
     const gen = branches.find(b => b.id === 'GEN');
+    const genUser = users.find(user => user.id === (gen ? gen.approverUserId : 'usr-head-gen'));
     return {
       approverId: gen ? gen.approverUserId : 'usr-head-gen',
-      approverName: gen ? gen.approverName : 'หัวหน้าครูสามัญ'
+      approverName: gen ? gen.approverName : 'หัวหน้าครูสามัญ',
+      lineId: genUser?.lineId
     };
   }
 
   // --- Requests ---
   public getRequests(): ExitRequest[] {
     const data = localStorage.getItem(KEYS.REQUESTS);
-    return data ? JSON.parse(data) : INITIAL_REQUESTS;
+    const list: ExitRequest[] = data ? JSON.parse(data) : INITIAL_REQUESTS;
+    if (!Array.isArray(list)) return INITIAL_REQUESTS;
+    return list.map(r => ({
+      ...r,
+      id: r.id || `REQ-${Date.now()}`,
+      userName: r.userName || 'ครูผู้ขอ',
+      destination: r.destination || '-',
+      reason: r.reason || '-',
+      branchName: r.branchName || 'ช่างกลโรงงาน',
+      branchId: r.branchId || 'ME',
+      position: r.position || 'ครูผู้สอน',
+      assignedApproverName: r.assignedApproverName || 'หัวหน้าสาขา',
+      exitDate: r.exitDate || new Date().toISOString().slice(0, 10),
+      exitTime: r.exitTime || '10:30',
+      returnTime: r.returnTime || '12:00',
+      status: r.status || 'pending',
+      travelMethod: r.travelMethod || 'ตามภารกิจราชการ',
+      qrToken: r.qrToken || `SECURE-EXIT-${r.id || Date.now()}`
+    }));
   }
 
   public getRequestById(id: string): ExitRequest | undefined {
@@ -266,6 +304,7 @@ export class StorageService {
         : undefined,
       assignedApproverId: approver.approverId,
       assignedApproverName: approver.approverName,
+      assignedApproverLineId: approver.lineId,
       substituteStatus: requestData.hasClasses ? (shouldSelfApprove ? 'acknowledged' : 'pending') : 'not_required',
       qrToken
     };
@@ -287,6 +326,8 @@ export class StorageService {
     });
 
     this.syncToAppsScript('create_request', newRequest);
+    // Sync immediately to server store
+    this.syncWithServer().catch(() => {});
     return newRequest;
   }
 
@@ -389,6 +430,8 @@ export class StorageService {
     });
 
     this.syncToAppsScript('update_status', updated);
+    // Sync to server store
+    this.syncWithServer().catch(() => {});
     return updated;
   }
 
@@ -483,6 +526,87 @@ export class StorageService {
       });
     } catch {
       // In web preview or if URL is offline, fail silently
+    }
+  }
+
+  // --- Full-Stack Bi-directional Server Sync ---
+  public async syncWithServer(): Promise<{
+    changed: boolean;
+    newlyApproved: ExitRequest[];
+    allRequests: ExitRequest[];
+    lastWebhookEvent?: any;
+  }> {
+    try {
+      const localRequests = this.getRequests();
+      const localLogs = this.getLogs();
+      const localSettings = this.getSettings();
+
+      const res = await fetch('/api/requests/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: localRequests,
+          logs: localLogs,
+          settings: {
+            lineChannelAccessToken: localSettings.lineChannelAccessToken,
+            googleAppsScriptUrl: localSettings.googleAppsScriptUrl,
+            appUrl: localSettings.appUrl
+          }
+        })
+      });
+
+      if (!res.ok) {
+        return { changed: false, newlyApproved: [], allRequests: localRequests };
+      }
+
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.requests)) {
+        return { changed: false, newlyApproved: [], allRequests: localRequests };
+      }
+
+      const serverRequests: ExitRequest[] = data.requests;
+      const newlyApproved: ExitRequest[] = [];
+      let hasChanges = false;
+
+      // Detect if any local request was transitioned from 'pending' to 'approved' or 'rejected' on the server (e.g. by LINE Webhook)
+      for (const sReq of serverRequests) {
+        const localMatch = localRequests.find(l => l.id === sReq.id);
+        if (localMatch) {
+          if (localMatch.status === 'pending' && sReq.status === 'approved') {
+            newlyApproved.push(sReq);
+            hasChanges = true;
+          } else if (localMatch.status === 'pending' && sReq.status === 'rejected') {
+            hasChanges = true;
+          } else if (localMatch.status !== sReq.status) {
+            hasChanges = true;
+          }
+        } else {
+          // New request from another device/browser
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges || serverRequests.length !== localRequests.length) {
+        this.saveRequests(serverRequests);
+      }
+
+      if (Array.isArray(data.logs) && data.logs.length > localLogs.length) {
+        localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+      }
+
+      return {
+        changed: hasChanges,
+        newlyApproved,
+        allRequests: serverRequests,
+        lastWebhookEvent: data.lastWebhookEvent
+      };
+    } catch {
+      // Offline or network error, silently return local state
+      return {
+        changed: false,
+        newlyApproved: [],
+        allRequests: this.getRequests()
+      };
     }
   }
 

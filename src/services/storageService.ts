@@ -9,7 +9,8 @@ const KEYS = {
   SETTINGS: 'exit_app_settings_v2',
   CURRENT_USER: 'exit_app_current_user_v2',
   IS_LOGGED_IN: 'exit_app_is_logged_in_v2',
-  REMEMBERED_CREDS: 'exit_app_remembered_creds_v2'
+  REMEMBERED_CREDS: 'exit_app_remembered_creds_v2',
+  DELETED_REQUEST_IDS: 'exit_app_deleted_request_ids_v2'
 };
 
 export class StorageService {
@@ -241,27 +242,49 @@ export class StorageService {
   }
 
   // --- Requests ---
+  public getDeletedRequestIds(): string[] {
+    try {
+      const data = localStorage.getItem(KEYS.DELETED_REQUEST_IDS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public addDeletedRequestId(id: string) {
+    try {
+      const ids = this.getDeletedRequestIds();
+      if (!ids.includes(id)) {
+        ids.push(id);
+        localStorage.setItem(KEYS.DELETED_REQUEST_IDS, JSON.stringify(ids));
+      }
+    } catch {}
+  }
+
   public getRequests(): ExitRequest[] {
     const data = localStorage.getItem(KEYS.REQUESTS);
     const list: ExitRequest[] = data ? JSON.parse(data) : INITIAL_REQUESTS;
     if (!Array.isArray(list)) return INITIAL_REQUESTS;
-    return list.map(r => ({
-      ...r,
-      id: r.id || `REQ-${Date.now()}`,
-      userName: r.userName || 'ครูผู้ขอ',
-      destination: r.destination || '-',
-      reason: r.reason || '-',
-      branchName: r.branchName || 'ช่างกลโรงงาน',
-      branchId: r.branchId || 'ME',
-      position: r.position || 'ครูผู้สอน',
-      assignedApproverName: r.assignedApproverName || 'หัวหน้าสาขา',
-      exitDate: r.exitDate || new Date().toISOString().slice(0, 10),
-      exitTime: r.exitTime || '10:30',
-      returnTime: r.returnTime || '12:00',
-      status: r.status || 'pending',
-      travelMethod: r.travelMethod || 'ตามภารกิจราชการ',
-      qrToken: r.qrToken || `SECURE-EXIT-${r.id || Date.now()}`
-    }));
+    const deletedIds = new Set(this.getDeletedRequestIds());
+    return list
+      .filter(r => r && r.id && !deletedIds.has(r.id))
+      .map(r => ({
+        ...r,
+        id: r.id || `REQ-${Date.now()}`,
+        userName: r.userName || 'ครูผู้ขอ',
+        destination: r.destination || '-',
+        reason: r.reason || '-',
+        branchName: r.branchName || 'ช่างกลโรงงาน',
+        branchId: r.branchId || 'ME',
+        position: r.position || 'ครูผู้สอน',
+        assignedApproverName: r.assignedApproverName || 'หัวหน้าสาขา',
+        exitDate: r.exitDate || new Date().toISOString().slice(0, 10),
+        exitTime: r.exitTime || '10:30',
+        returnTime: r.returnTime || '12:00',
+        status: r.status || 'pending',
+        travelMethod: r.travelMethod || 'ตามภารกิจราชการ',
+        qrToken: r.qrToken || `SECURE-EXIT-${r.id || Date.now()}`
+      }));
   }
 
   public getRequestById(id: string): ExitRequest | undefined {
@@ -274,6 +297,81 @@ export class StorageService {
 
   public saveRequests(requests: ExitRequest[]) {
     localStorage.setItem(KEYS.REQUESTS, JSON.stringify(requests));
+  }
+
+  public deleteRequest(id: string, actor?: User): boolean {
+    const requests = this.getRequests();
+    const reqToDelete = requests.find(r => r.id === id);
+    if (!reqToDelete) return false;
+
+    const updated = requests.filter(r => r.id !== id);
+    this.saveRequests(updated);
+    this.addDeletedRequestId(id);
+
+    // Add audit log
+    if (actor) {
+      this.addLog({
+        requestId: id,
+        requestSummary: `คำขอ ${id}: ${reqToDelete.userName} (${reqToDelete.branchName})`,
+        actorId: actor.id,
+        actorName: actor.name,
+        actorRole: actor.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : actor.position,
+        action: 'delete',
+        comment: `ผู้ดูแลระบบ (${actor.name}) ลบรายการคำขอเลขที่ ${id} ของครู ${reqToDelete.userName} (${reqToDelete.branchName}) ออกจากระบบ`
+      });
+    }
+
+    // Call server DELETE asynchronously
+    try {
+      fetch(`/api/requests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
+
+    // Send Google Apps Script delete event if configured
+    this.syncToAppsScript('delete_request', {
+      requestId: id,
+      userName: reqToDelete.userName,
+      deletedBy: actor ? actor.name : 'Admin'
+    });
+
+    return true;
+  }
+
+  public batchDeleteRequests(ids: string[], actor?: User): number {
+    let deletedCount = 0;
+    const requests = this.getRequests();
+    const idSet = new Set(ids);
+    const remaining = requests.filter(r => {
+      if (idSet.has(r.id)) {
+        deletedCount++;
+        this.addDeletedRequestId(r.id);
+        if (actor) {
+          this.addLog({
+            requestId: r.id,
+            requestSummary: `คำขอ ${r.id}: ${r.userName} (${r.branchName})`,
+            actorId: actor.id,
+            actorName: actor.name,
+            actorRole: actor.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : actor.position,
+            action: 'delete',
+            comment: `ผู้ดูแลระบบ (${actor.name}) ลบรายการคำขอเลขที่ ${r.id} ของครู ${r.userName}`
+          });
+        }
+        return false;
+      }
+      return true;
+    });
+
+    this.saveRequests(remaining);
+
+    // Call server batch delete
+    try {
+      fetch('/api/requests/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      }).catch(() => {});
+    } catch {}
+
+    return deletedCount;
   }
 
   public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'> & { selfApprove?: boolean }): ExitRequest {
@@ -540,6 +638,7 @@ export class StorageService {
       const localRequests = this.getRequests();
       const localLogs = this.getLogs();
       const localSettings = this.getSettings();
+      const deletedRequestIds = this.getDeletedRequestIds();
 
       const res = await fetch('/api/requests/sync', {
         method: 'POST',
@@ -547,6 +646,7 @@ export class StorageService {
         body: JSON.stringify({
           requests: localRequests,
           logs: localLogs,
+          deletedRequestIds,
           settings: {
             lineChannelAccessToken: localSettings.lineChannelAccessToken,
             googleAppsScriptUrl: localSettings.googleAppsScriptUrl,
@@ -564,7 +664,14 @@ export class StorageService {
         return { changed: false, newlyApproved: [], allRequests: localRequests };
       }
 
-      const serverRequests: ExitRequest[] = data.requests;
+      if (Array.isArray(data.deletedRequestIds)) {
+        for (const dId of data.deletedRequestIds) {
+          this.addDeletedRequestId(dId);
+        }
+      }
+
+      const currentDeletedSet = new Set(this.getDeletedRequestIds());
+      const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id && !currentDeletedSet.has(r.id));
       const newlyApproved: ExitRequest[] = [];
       let hasChanges = false;
 
@@ -591,7 +698,8 @@ export class StorageService {
       }
 
       if (Array.isArray(data.logs) && data.logs.length > localLogs.length) {
-        localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+        const filteredLogs = data.logs.filter((l: ApprovalLog) => !currentDeletedSet.has(l.requestId));
+        localStorage.setItem(KEYS.LOGS, JSON.stringify(filteredLogs));
       }
 
       return {

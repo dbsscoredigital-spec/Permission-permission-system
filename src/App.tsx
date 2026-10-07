@@ -361,6 +361,24 @@ export default function App() {
     }
   };
 
+  // 5. Delete Request (Admin Action)
+  const handleDeleteRequest = (requestId: string) => {
+    const success = storage.deleteRequest(requestId, currentUser);
+    if (success) {
+      refreshAllData();
+      showToast(`ลบรายการคำขอเลขที่ ${requestId} ออกจากระบบเรียบร้อยแล้ว`, 'success');
+    } else {
+      showToast(`ไม่พบคำขอเลขที่ ${requestId}`, 'error');
+    }
+  };
+
+  // 5.1 Batch Delete Requests (Admin Action)
+  const handleBatchDeleteRequests = (requestIds: string[]) => {
+    const count = storage.batchDeleteRequests(requestIds, currentUser);
+    refreshAllData();
+    showToast(`ลบรายการคำขอที่เลือกเรียบร้อยแล้ว (${count} รายการ)`, 'success');
+  };
+
   // Reset demo
   const handleResetData = () => {
     storage.resetToDefaults();
@@ -507,6 +525,8 @@ export default function App() {
             }}
             onApprove={handleApproveRequest}
             onReject={handleRejectRequest}
+            onDeleteRequest={handleDeleteRequest}
+            onBatchDeleteRequests={handleBatchDeleteRequests}
             onPrintSlip={(req) => setPrintSlipReq(req)}
             onViewQrPass={(req) => setQrPassReq(req)}
             onOpenSheetsModal={() => setIsSheetsModalOpen(true)}

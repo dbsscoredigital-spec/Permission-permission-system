@@ -91,6 +91,8 @@ function doPost(e) {
       return handleCreateRequest(payload);
     } else if (action === "update_status") {
       return handleUpdateStatus(payload);
+    } else if (action === "delete_request") {
+      return handleDeleteRequest(payload);
     }
 
     return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Processed" }))
@@ -319,6 +321,33 @@ function handleUpdateStatus(req) {
   sendLineNotificationToTeacher(req);
 
   return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 2.3 ลบรายการคำขอ (Admin Action)
+function handleDeleteRequest(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reqSheet = ss.getSheetByName("Requests");
+  const logSheet = ss.getSheetByName("ApprovalLog");
+  const data = reqSheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === payload.requestId) {
+      reqSheet.deleteRow(i + 1);
+      break;
+    }
+  }
+
+  logSheet.appendRow([
+    "LOG-" + new Date().getTime(),
+    payload.requestId,
+    payload.deletedBy || "ผู้ดูแลระบบ",
+    "delete",
+    new Date(),
+    "ผู้ดูแลระบบลบรายการคำขอเลขที่ " + payload.requestId + " ของครู " + (payload.userName || "")
+  ]);
+
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", deleted: payload.requestId }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 

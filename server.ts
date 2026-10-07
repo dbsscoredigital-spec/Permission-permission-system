@@ -51,6 +51,7 @@ ensureTunnelRunning();
 interface ServerStore {
   requests: any[];
   logs: any[];
+  deletedRequestIds?: string[];
   settings: {
     lineChannelAccessToken?: string;
     googleAppsScriptUrl?: string;
@@ -95,9 +96,12 @@ function loadServerStore(): ServerStore {
       const data = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(data);
       const rawRequests = Array.isArray(parsed.requests) ? parsed.requests : [];
+      const deletedIds = Array.isArray(parsed.deletedRequestIds) ? parsed.deletedRequestIds : [];
+      const deletedSet = new Set(deletedIds);
       return {
-        requests: rawRequests.map(sanitizeRequest).filter(Boolean),
-        logs: Array.isArray(parsed.logs) ? parsed.logs : [],
+        requests: rawRequests.map(sanitizeRequest).filter((r: any) => r && !deletedSet.has(r.id)),
+        logs: Array.isArray(parsed.logs) ? parsed.logs.filter((l: any) => !deletedSet.has(l.requestId)) : [],
+        deletedRequestIds: deletedIds,
         settings: parsed.settings || {},
         lastWebhookEvent: parsed.lastWebhookEvent || undefined,
         webhookCount: typeof parsed.webhookCount === 'number' ? parsed.webhookCount : 0
@@ -110,6 +114,7 @@ function loadServerStore(): ServerStore {
   return {
     requests: [],
     logs: [],
+    deletedRequestIds: [],
     settings: {
       lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
     },
@@ -333,7 +338,25 @@ async function startServer() {
   // API 4: Sync requests between Client and Server (Bi-directional merge)
   app.post('/api/requests/sync', (req, res) => {
     try {
-      const { requests: clientRequests, logs: clientLogs, settings: clientSettings } = req.body;
+      const { requests: clientRequests, logs: clientLogs, settings: clientSettings, deletedRequestIds: clientDeletedIds } = req.body;
+
+      if (!serverStore.deletedRequestIds) {
+        serverStore.deletedRequestIds = [];
+      }
+      if (Array.isArray(clientDeletedIds)) {
+        for (const dId of clientDeletedIds) {
+          if (!serverStore.deletedRequestIds.includes(dId)) {
+            serverStore.deletedRequestIds.push(dId);
+          }
+        }
+      }
+
+      // Purge any requests in serverStore that have been deleted
+      if (serverStore.deletedRequestIds.length > 0) {
+        const deletedSet = new Set(serverStore.deletedRequestIds);
+        serverStore.requests = serverStore.requests.filter(r => !deletedSet.has(r.id));
+        serverStore.logs = serverStore.logs.filter(l => !deletedSet.has(l.requestId));
+      }
 
       if (clientSettings) {
         if (clientSettings.lineChannelAccessToken && !clientSettings.lineChannelAccessToken.startsWith('MOCK_')) {
@@ -348,7 +371,9 @@ async function startServer() {
       }
 
       if (Array.isArray(clientRequests)) {
+        const deletedSet = new Set(serverStore.deletedRequestIds || []);
         for (const cReq of clientRequests) {
+          if (deletedSet.has(cReq.id)) continue;
           const sanitizedClientReq = sanitizeRequest(cReq);
           if (!sanitizedClientReq) continue;
 
@@ -379,7 +404,9 @@ async function startServer() {
       }
 
       if (Array.isArray(clientLogs)) {
+        const deletedSet = new Set(serverStore.deletedRequestIds || []);
         for (const cLog of clientLogs) {
+          if (deletedSet.has(cLog.requestId)) continue;
           if (!serverStore.logs.some(l => l.id === cLog.id || (l.requestId === cLog.requestId && l.action === cLog.action))) {
             serverStore.logs.push(cLog);
           }
@@ -392,12 +419,76 @@ async function startServer() {
         success: true,
         requests: serverStore.requests,
         logs: serverStore.logs,
+        deletedRequestIds: serverStore.deletedRequestIds || [],
         lastWebhookEvent: serverStore.lastWebhookEvent
       });
     } catch (err: any) {
       return res.status(500).json({
         success: false,
         error: 'Sync error: ' + (err.message || String(err))
+      });
+    }
+  });
+
+  // API 4.1: Delete Request by ID (Admin Action)
+  app.delete('/api/requests/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const initialCount = serverStore.requests.length;
+      serverStore.requests = serverStore.requests.filter(r => r.id !== id);
+      serverStore.logs = serverStore.logs.filter(l => l.requestId !== id);
+
+      if (!serverStore.deletedRequestIds) {
+        serverStore.deletedRequestIds = [];
+      }
+      if (!serverStore.deletedRequestIds.includes(id)) {
+        serverStore.deletedRequestIds.push(id);
+      }
+      saveServerStore();
+
+      return res.json({
+        success: true,
+        deleted: initialCount > serverStore.requests.length,
+        id
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to delete request: ' + (err.message || String(err))
+      });
+    }
+  });
+
+  // API 4.2: Batch Delete Requests (Admin Action)
+  app.post('/api/requests/batch-delete', (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        return res.status(400).json({ success: false, error: 'ids must be an array' });
+      }
+      const idSet = new Set(ids);
+      const initialCount = serverStore.requests.length;
+      serverStore.requests = serverStore.requests.filter(r => !idSet.has(r.id));
+      serverStore.logs = serverStore.logs.filter(l => !idSet.has(l.requestId));
+
+      if (!serverStore.deletedRequestIds) {
+        serverStore.deletedRequestIds = [];
+      }
+      for (const id of ids) {
+        if (!serverStore.deletedRequestIds.includes(id)) {
+          serverStore.deletedRequestIds.push(id);
+        }
+      }
+      saveServerStore();
+
+      return res.json({
+        success: true,
+        deletedCount: initialCount - serverStore.requests.length
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to batch delete requests: ' + (err.message || String(err))
       });
     }
   });

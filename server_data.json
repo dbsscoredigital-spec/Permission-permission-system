@@ -10,6 +10,34 @@
       "exitDate": "2026-10-07",
       "exitTime": "10:30",
       "returnTime": "12:00",
+      "destination": "สนรสีสร",
+      "reason": "นสวรนสร",
+      "travelMethod": "ตามภารกิจราชการ",
+      "vehiclePlate": "",
+      "companions": "",
+      "notes": "",
+      "hasClasses": false,
+      "substituteStatus": "not_required",
+      "id": "REQ-20261007-825",
+      "submittedAt": "2569-10-07 09:23",
+      "status": "approved",
+      "assignedApproverId": "usr-import-64665",
+      "assignedApproverName": "นายคัมภีร์ ช่วยเพชร หัวหน้าสาขา (หัวหน้าสาขาช่างกลโรงงาน)",
+      "assignedApproverLineId": "U81778d734346f14e047e07cb37d1ccd1",
+      "qrToken": "SECURE-EXIT-REQ-20261007-825-ME-HC8OBQ",
+      "approvedAt": "2569-10-07 02:23",
+      "approvedBy": "หัวหน้าสาขา (อนุมัติผ่าน LINE)"
+    },
+    {
+      "userId": "usr-import-64661",
+      "userName": "นายสุมัณฑิต ทิพย์มนตรี",
+      "branchId": "ME",
+      "branchName": "ช่างกลโรงงาน",
+      "position": "ครูผู้สอน",
+      "userPhone": "",
+      "exitDate": "2026-10-07",
+      "exitTime": "10:30",
+      "returnTime": "12:00",
       "destination": "kiykjhkh",
       "reason": "likljkj",
       "travelMethod": "ตามภารกิจราชการ",
@@ -894,19 +922,44 @@
       "action": "approve",
       "timestamp": "2569-10-07 02:21",
       "comment": "หัวหน้าสาขากดปุ่ม \"อนุมัติ\" ใน LINE บนสมาร์ทโฟนเรียบร้อยแล้ว"
+    },
+    {
+      "requestId": "REQ-20261007-825",
+      "requestSummary": "นายสุมัณฑิต ทิพย์มนตรี (ครูผู้สอน) ขอออกไป สนรสีสร",
+      "actorId": "usr-import-64661",
+      "actorName": "นายสุมัณฑิต ทิพย์มนตรี",
+      "actorRole": "ครูผู้ขอ",
+      "action": "submit",
+      "comment": "ยื่นคำขอใหม่ ส่งตรงถึง นายคัมภีร์ ช่วยเพชร หัวหน้าสาขา (หัวหน้าสาขาช่างกลโรงงาน) อัตโนมัติ",
+      "id": "LOG-814781",
+      "timestamp": "2569-10-07 09:23"
+    },
+    {
+      "id": "LOG-LINE-1791339820682",
+      "requestId": "REQ-20261007-825",
+      "requestSummary": "นายสุมัณฑิต ทิพย์มนตรี ขอออกไป สนรสีสร",
+      "actorId": "U81778d734346f14e047e07cb37d1ccd1",
+      "actorName": "หัวหน้าสาขา (ผ่าน LINE)",
+      "actorRole": "หัวหน้าสาขา",
+      "action": "approve",
+      "timestamp": "2569-10-07 02:23",
+      "comment": "หัวหน้าสาขากดปุ่ม \"อนุมัติ\" ใน LINE บนสมาร์ทโฟนเรียบร้อยแล้ว"
     }
+  ],
+  "deletedRequestIds": [
+    "REQ-TEST-TO-DELETE"
   ],
   "settings": {
     "lineChannelAccessToken": "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=",
     "googleAppsScriptUrl": "https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec"
   },
   "lastWebhookEvent": {
-    "timestamp": "2026-10-07T02:21:52.390Z",
+    "timestamp": "2026-10-07T02:23:40.682Z",
     "type": "postback",
-    "reqId": "REQ-20261006-571",
+    "reqId": "REQ-20261007-825",
     "action": "approve",
-    "summary": "หัวหน้าสาขากด อนุมัติ คำขอ REQ-20261006-571 ผ่าน LINE สำเร็จ",
+    "summary": "หัวหน้าสาขากด อนุมัติ คำขอ REQ-20261007-825 ผ่าน LINE สำเร็จ",
     "success": true
   },
-  "webhookCount": 9
+  "webhookCount": 10
 }

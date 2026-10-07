@@ -79,7 +79,7 @@ export interface ApprovalLog {
   actorId: string;
   actorName: string;
   actorRole: string;
-  action: 'submit' | 'approve' | 'reject' | 'cancel' | 'gate_exit' | 'gate_return' | 'substitute_ack' | 'substitute_decline';
+  action: 'submit' | 'approve' | 'reject' | 'cancel' | 'gate_exit' | 'gate_return' | 'substitute_ack' | 'substitute_decline' | 'delete';
   timestamp: string;
   comment?: string;
 }

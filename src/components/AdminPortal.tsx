@@ -61,6 +61,8 @@ interface AdminPortalProps {
   onUpdateSettings: (settings: SystemSettings) => void;
   onApprove?: (requestId: string) => void;
   onReject?: (requestId: string, reason: string) => void;
+  onDeleteRequest?: (requestId: string) => void;
+  onBatchDeleteRequests?: (requestIds: string[]) => void;
   onPrintSlip: (req: ExitRequest) => void;
   onViewQrPass: (req: ExitRequest) => void;
   onOpenSheetsModal: () => void;
@@ -78,6 +80,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onUpdateSettings,
   onApprove,
   onReject,
+  onDeleteRequest,
+  onBatchDeleteRequests,
   onPrintSlip,
   onViewQrPass,
   onOpenSheetsModal
@@ -94,6 +98,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Rejection dialog state for Admin
   const [rejectingAdminReq, setRejectingAdminReq] = useState<ExitRequest | null>(null);
   const [adminRejectReason, setAdminRejectReason] = useState('');
+
+  // Request Deletion state for Admin
+  const [requestToDelete, setRequestToDelete] = useState<ExitRequest | null>(null);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Settings local state
   const [localSettings, setLocalSettings] = useState<SystemSettings>(settings);
@@ -368,6 +378,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     const matchesDate = !dateFilter || r.exitDate === dateFilter;
     return matchesSearch && matchesBranch && matchesStatus && matchesDate;
   });
+
+  // Handle single request deletion
+  const handleSingleDelete = () => {
+    if (!requestToDelete) return;
+    setIsDeleting(true);
+    try {
+      if (onDeleteRequest) {
+        onDeleteRequest(requestToDelete.id);
+      } else {
+        StorageService.getInstance().deleteRequest(requestToDelete.id, currentUser);
+      }
+      setSelectedRequestIds(prev => prev.filter(id => id !== requestToDelete.id));
+      setRequestToDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Handle batch deletion
+  const handleBatchDelete = () => {
+    if (selectedRequestIds.length === 0) return;
+    setIsDeleting(true);
+    try {
+      if (onBatchDeleteRequests) {
+        onBatchDeleteRequests(selectedRequestIds);
+      } else {
+        StorageService.getInstance().batchDeleteRequests(selectedRequestIds, currentUser);
+      }
+      setSelectedRequestIds([]);
+      setShowBatchDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Toggle select all requests in current filtered view
+  const handleToggleSelectAll = () => {
+    if (filteredRequests.length > 0 && selectedRequestIds.length === filteredRequests.length) {
+      setSelectedRequestIds([]);
+    } else {
+      setSelectedRequestIds(filteredRequests.map(r => r.id));
+    }
+  };
+
+  // Toggle single request selection
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedRequestIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
 
   // Export Requests to CSV
   const handleExportCSV = () => {
@@ -872,17 +932,59 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
 
+          {/* Batch Action Toolbar when items are selected */}
+          {selectedRequestIds.length > 0 && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 sm:px-4 flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-[11px] font-bold">
+                  {selectedRequestIds.length}
+                </span>
+                <span className="font-bold text-rose-900 text-xs sm:text-sm">
+                  เลือกไว้ {selectedRequestIds.length} รายการ
+                </span>
+                <span className="text-slate-500 text-[11px] hidden sm:inline">
+                  (จากรายการที่แสดงทั้งหมด {filteredRequests.length} รายการ)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRequestIds([])}
+                  className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium cursor-pointer text-xs"
+                >
+                  ยกเลิกการเลือก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteConfirm(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-xs text-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบคำขอที่เลือก ({selectedRequestIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Table Container: Mobile Card List + Desktop Table */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             {/* Mobile Cards (Visible on mobile screens < sm) */}
             <div className="sm:hidden p-3 space-y-2.5">
               {filteredRequests.map((req, idx) => (
-                <div key={`admin-req-card-${req.id}-${idx}`} className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2 text-xs">
+                <div key={`admin-req-card-${req.id}-${idx}`} className={`bg-white rounded-xl border p-3 shadow-2xs space-y-2 text-xs transition-colors ${selectedRequestIds.includes(req.id) ? 'border-purple-300 bg-purple-50/20' : 'border-slate-200/90'}`}>
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-mono text-[10px] text-slate-400 block">{req.id}</span>
-                      <strong className="text-slate-900 text-xs block">{req.userName}</strong>
-                      <span className="text-[11px] text-purple-700 font-medium">{req.branchName} • {req.position}</span>
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedRequestIds.includes(req.id)}
+                        onChange={() => handleToggleSelectOne(req.id)}
+                        className="rounded text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer mt-0.5 shrink-0"
+                      />
+                      <div>
+                        <span className="font-mono text-[10px] text-slate-400 block">{req.id}</span>
+                        <strong className="text-slate-900 text-xs block">{req.userName}</strong>
+                        <span className="text-[11px] text-purple-700 font-medium">{req.branchName} • {req.position}</span>
+                      </div>
                     </div>
                     <div>
                       {req.status === 'pending' && (
@@ -927,7 +1029,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between gap-1.5 pt-1">
-                    <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                    <span className="text-[10px] text-slate-400 truncate max-w-[110px]">
                       ผู้อนุมัติ: {(req.assignedApproverName || '-').split(' ')[0]}
                     </span>
                     <div className="flex items-center gap-1.5">
@@ -973,6 +1075,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           </button>
                         </>
                       )}
+                      {/* Delete Button for Admin on Mobile */}
+                      <button
+                        type="button"
+                        onClick={() => setRequestToDelete(req)}
+                        className="px-2 py-1 rounded-lg text-[11px] font-medium bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 cursor-pointer flex items-center gap-1 transition-colors"
+                        title="ลบรายการคำขอนี้"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>ลบ</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -984,6 +1096,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                   <tr>
+                    <th className="px-3 py-3 w-8 text-center">
+                      <input
+                        type="checkbox"
+                        checked={filteredRequests.length > 0 && selectedRequestIds.length === filteredRequests.length}
+                        onChange={handleToggleSelectAll}
+                        className="rounded text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                        title="เลือกทั้งหมด"
+                      />
+                    </th>
                     <th className="px-4 py-3">รหัสคำขอ / ผู้ขอ</th>
                     <th className="px-4 py-3">สาขาวิชา</th>
                     <th className="px-4 py-3">วัน-เวลาขอออก</th>
@@ -991,12 +1112,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <th className="px-4 py-3">เวลาสแกนประตู รปภ. (เข้า-ออกจริง)</th>
                     <th className="px-4 py-3">ผู้อนุมัติ</th>
                     <th className="px-4 py-3">สถานะ</th>
-                    <th className="px-4 py-3 text-right">เอกสาร / ตรวจสอบ</th>
+                    <th className="px-4 py-3 text-right">เอกสาร / จัดการ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredRequests.map(req => (
-                    <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={req.id} className={`hover:bg-slate-50/80 transition-colors ${selectedRequestIds.includes(req.id) ? 'bg-purple-50/40' : ''}`}>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedRequestIds.includes(req.id)}
+                          onChange={() => handleToggleSelectOne(req.id)}
+                          className="rounded text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <span className="font-mono text-[10px] text-slate-400 block">{req.id}</span>
                         <strong className="text-slate-900 text-xs">{req.userName}</strong>
@@ -1115,12 +1244,187 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               </button>
                             </>
                           )}
+
+                          {/* Delete Request Button for Admin */}
+                          <button
+                            type="button"
+                            onClick={() => setRequestToDelete(req)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                            title="ลบรายการคำขอ"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Delete Request Confirmation Modal */}
+      {requestToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  ยืนยันการลบรายการคำขอ
+                </h3>
+                <span className="text-xs text-rose-600 font-semibold font-mono">
+                  {requestToDelete.id}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2 text-xs text-slate-700">
+              <div className="flex justify-between">
+                <span className="text-slate-500">ครูผู้ยื่นคำขอ:</span>
+                <span className="font-bold text-slate-900">{requestToDelete.userName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สาขาวิชา:</span>
+                <span className="font-semibold text-purple-700">{requestToDelete.branchName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">วัน-เวลาขอออก:</span>
+                <span>{requestToDelete.exitDate} ({requestToDelete.exitTime} - {requestToDelete.returnTime} น.)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สถานที่:</span>
+                <span className="font-medium truncate max-w-[200px]">{requestToDelete.destination}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สถานะปัจจุบัน:</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  requestToDelete.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                  requestToDelete.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                  'bg-amber-100 text-amber-800'
+                }`}>
+                  {requestToDelete.status === 'approved' ? 'อนุมัติแล้ว' :
+                   requestToDelete.status === 'rejected' ? 'ไม่อนุมัติ' : 'รออนุมัติ'}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+              <span>
+                <strong>คำเตือน:</strong> การลบรายการนี้จะลบออกจากระบบและชีตอย่างถาวร QR Code หรือประวัติที่เกี่ยวข้องจะไม่สามารถนำกลับมาใช้งานได้
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setRequestToDelete(null)}
+                className="px-4 py-2 text-xs rounded-xl font-medium text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleSingleDelete}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>กำลังลบ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>ยืนยันลบรายการนี้</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Batch Delete Confirmation Modal */}
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  ยืนยันการลบหลายรายการ
+                </h3>
+                <span className="text-xs text-rose-600 font-semibold">
+                  ลบทั้งหมด {selectedRequestIds.length} รายการที่เลือก
+                </span>
+              </div>
+            </div>
+
+            <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-200 text-xs">
+              {selectedRequestIds.map(id => {
+                const req = requests.find(r => r.id === id);
+                return (
+                  <div key={id} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-slate-200/60">
+                    <span className="font-mono text-[10px] text-slate-500">{id}</span>
+                    <span className="font-medium text-slate-800 text-[11px] truncate max-w-[150px]">
+                      {req ? req.userName : '-'}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                      req?.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
+                      req?.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
+                      'bg-amber-50 text-amber-700'
+                    }`}>
+                      {req?.status === 'approved' ? 'อนุมัติ' : req?.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอ'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+              <span>
+                <strong>คำเตือน:</strong> คุณกำลังจะลบคำขอทั้ง {selectedRequestIds.length} รายการอย่างถาวร ข้อมูลจะไม่สามารถกู้คืนได้
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                className="px-4 py-2 text-xs rounded-xl font-medium text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleBatchDelete}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>กำลังลบ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>ยืนยันลบ {selectedRequestIds.length} รายการ</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -351,8 +351,18 @@ export class LineService {
     // Send real LINE Flex message to requesting teacher if they have lineId
     const storage = StorageService.getInstance();
     const users = storage.getUsers();
-    const teacherUser = users.find(u => u.id === req.userId);
-    const teacherLineId = teacherUser?.lineId;
+    let teacherLineId = req.userLineId || req.teacherLineId;
+    if (!teacherLineId || !teacherLineId.trim().startsWith('U') || teacherLineId.startsWith('U_')) {
+      const norm = (s: string) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const teacherUser = users.find(u => 
+        (req.userId && u.id === req.userId) || 
+        (req.userName && norm(u.name) === norm(req.userName)) ||
+        ((req as any).userUsername && u.username === (req as any).userUsername)
+      );
+      if (teacherUser?.lineId && teacherUser.lineId.trim().startsWith('U')) {
+        teacherLineId = teacherUser.lineId.trim();
+      }
+    }
 
     if (teacherLineId && teacherLineId.trim().startsWith('U')) {
       const flexStatusPayload = this.generateTeacherStatusFlexPayload(req, status, approverName, rejectionReason);
@@ -511,10 +521,26 @@ export class LineService {
    * Can be directly plugged into LINE Messaging API or Google Apps Script UrlFetchApp.
    */
   public generateLineFlexMessagePayload(req: ExitRequest) {
-    const baseUrl = this.getAppBaseUrl();
-    const directApproveUrl = `${baseUrl}?action=direct_approve&reqId=${encodeURIComponent(req.id)}`;
-    const directRejectUrl = `${baseUrl}?action=direct_reject&reqId=${encodeURIComponent(req.id)}`;
-    const approveUrl = `${baseUrl}?action=approve&reqId=${encodeURIComponent(req.id)}`;
+    const cachedTunnel = typeof window !== 'undefined' ? localStorage.getItem('public_tunnel_url') : '';
+    const baseUrl = (cachedTunnel && cachedTunnel.startsWith('http'))
+      ? cachedTunnel.replace(/\/$/, '')
+      : this.getAppBaseUrl();
+
+    let gasUrl = '';
+    try {
+      const settings = typeof window !== 'undefined' ? StorageService.getInstance().getSettings() : null;
+      if (settings?.googleAppsScriptUrl && settings.googleAppsScriptUrl.startsWith('http')) {
+        gasUrl = settings.googleAppsScriptUrl;
+      }
+    } catch {}
+    if (!gasUrl) {
+      gasUrl = 'https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec';
+    }
+
+    // Google Apps Script endpoint works on every phone browser with 0 authentication barrier
+    const primaryApproveUrl = gasUrl ? `${gasUrl}?action=approve&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=approve&reqId=${encodeURIComponent(req.id)}`;
+    const primaryRejectUrl = gasUrl ? `${gasUrl}?action=reject&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=reject&reqId=${encodeURIComponent(req.id)}`;
+    const inAppViewUrl = `${baseUrl}?action=direct_approve&reqId=${encodeURIComponent(req.id)}`;
 
     return {
       type: 'flex',
@@ -615,9 +641,9 @@ export class LineService {
                   color: '#16a34a',
                   action: {
                     type: 'postback',
-                    label: '✅ กดอนุมัติใน LINE',
-                    data: `action=approve&reqId=${req.id}`,
-                    displayText: `✅ อนุมัติคำขอ ${req.id}`
+                    label: '✅ กดอนุมัติทันที',
+                    data: `action=approve&reqId=${encodeURIComponent(req.id)}`,
+                    displayText: `อนุมัติ ${req.id}`
                   }
                 },
                 {
@@ -627,8 +653,8 @@ export class LineService {
                   action: {
                     type: 'postback',
                     label: '❌ ไม่อนุมัติ',
-                    data: `action=reject&reqId=${req.id}`,
-                    displayText: `❌ ไม่อนุมัติคำขอ ${req.id}`
+                    data: `action=reject&reqId=${encodeURIComponent(req.id)}`,
+                    displayText: `ไม่อนุมัติ ${req.id}`
                   }
                 }
               ]
@@ -639,8 +665,8 @@ export class LineService {
               height: 'sm',
               action: {
                 type: 'uri',
-                label: '🌐 หรือเปิดอนุมัติผ่านเว็บ',
-                uri: directApproveUrl
+                label: '🌐 เปิดในระบบเว็บ / ดูสลิป',
+                uri: inAppViewUrl
               }
             }
           ]

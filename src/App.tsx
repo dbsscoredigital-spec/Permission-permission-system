@@ -102,6 +102,27 @@ export default function App() {
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
+  // Check if deployed Google Apps Script is running latest version
+  const [gasOutdated, setGasOutdated] = useState<boolean>(false);
+
+  useEffect(() => {
+    const checkGasVersion = () => {
+      fetch('/api/line/test-gas-webhook')
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.isOutdated) {
+            setGasOutdated(true);
+          } else {
+            setGasOutdated(false);
+          }
+        })
+        .catch(() => {});
+    };
+    checkGasVersion();
+    const interval = setInterval(checkGasVersion, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Auto-sync with Server & LINE Webhook Poll (every 3 seconds)
   useEffect(() => {
     let isMounted = true;
@@ -109,13 +130,19 @@ export default function App() {
     const performSync = async () => {
       try {
         const syncRes = await storage.syncWithServer();
-        if (isMounted && syncRes.changed) {
-          setRequests(storage.getRequests());
+        if (isMounted) {
+          if (Array.isArray(syncRes.allRequests) && syncRes.allRequests.length > 0) {
+            setRequests(syncRes.allRequests);
+          } else {
+            setRequests(storage.getRequests());
+          }
           setLogs(storage.getLogs());
+          setUsers(storage.getUsers());
+          setBranches(storage.getBranches());
 
           if (syncRes.newlyApproved && syncRes.newlyApproved.length > 0) {
             syncRes.newlyApproved.forEach(appr => {
-              showToast(`🎉 คำขอ ${appr.id} (${appr.userName}) ได้รับการอนุมัติผ่าน LINE เรียบร้อยแล้ว!`, 'success');
+              showToast(`🎉 คำขอ ${appr.id} (${appr.userName}) ได้รับการอนุมัติเรียบร้อยแล้ว! พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
             });
           }
         }
@@ -166,7 +193,7 @@ export default function App() {
         }
       }
 
-      if (reqId && (action === 'direct_approve' || action === 'approve')) {
+      if (reqId && (action === 'direct_approved' || action === 'direct_approve' || action === 'approve')) {
         const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
         const approverUser = users.find(u => u.role === 'approver' && (found ? u.branchId === found.branchId : true)) || currentUser;
         
@@ -188,12 +215,16 @@ export default function App() {
             success: true,
             message: `🎉 อนุมัติคำขอ ${reqId} ของ ${updated.userName} เรียบร้อยแล้ว!`
           });
-          showToast(`🎉 อนุมัติคำขอ ${reqId} สำเร็จแล้ว!`, 'success');
+          showToast(`🎉 อนุมัติคำขอ ${reqId} สำเร็จแล้ว! พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
         } else {
           // If request was created on another device, sync with server
-          storage.syncWithServer().then(() => {
+          storage.syncWithServer().then((syncRes) => {
+            const reqList = syncRes.allRequests || storage.getRequests();
+            let reFound = reqList.find(r => r.id.toLowerCase() === reqId.toLowerCase());
+            if (reFound && reFound.status !== 'approved') {
+              reFound = storage.updateRequestStatus(reqId, 'approved', approverUser) || reFound;
+            }
             refreshAllData();
-            const reFound = storage.getRequestById(reqId);
             setDirectActionResult({
               request: reFound,
               reqId,
@@ -201,7 +232,7 @@ export default function App() {
               success: true,
               message: `🎉 อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว!`
             });
-            showToast(`🎉 อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว!`, 'success');
+            showToast(`🎉 อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว! พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
           }).catch(() => {});
         }
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -237,6 +268,19 @@ export default function App() {
               success: true,
               message: `❌ บันทึกไม่อนุมัติคำขอ ${reqId} เรียบร้อยแล้ว`
             });
+          }).catch(() => {});
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (reqId && (action === 'view_pass' || action === 'view_slip' || action === 'view_qr')) {
+        const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
+        if (found) {
+          setQrPassReq(found);
+          showToast(`เปิดบัตรผ่าน QR Code สำหรับคำขอ ${found.id}`, 'info');
+        } else {
+          storage.syncWithServer().then(() => {
+            refreshAllData();
+            const reFound = storage.getRequestById(reqId);
+            if (reFound) setQrPassReq(reFound);
           }).catch(() => {});
         }
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -329,9 +373,24 @@ export default function App() {
 
   // 2. Approve Request (Triggers LINE Message back to Teacher)
   const handleApproveRequest = async (requestId: string) => {
+    // 1. Immediately call backend status endpoint to guarantee server-wide persistence
+    try {
+      await fetch(`/api/requests/${encodeURIComponent(requestId)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'approved',
+          actorName: currentUser.name,
+          actorId: currentUser.id,
+          actorRole: currentUser.role
+        })
+      });
+    } catch {}
+
     const updated = storage.updateRequestStatus(requestId, 'approved', currentUser);
     if (updated) {
       const lineRes = await lineService.sendTeacherStatusNotification(updated, 'approved', currentUser.name);
+      await storage.syncWithServer();
       refreshAllData();
       if (lineRes.success) {
         showToast(`อนุมัติคำขอ ${updated.id} สำเร็จ! ส่ง LINE แจ้งผลกลับไปยังครู ${updated.userName} เรียบร้อย 📲`, 'success');
@@ -343,9 +402,24 @@ export default function App() {
 
   // 3. Reject Request (Triggers LINE Message back to Teacher)
   const handleRejectRequest = async (requestId: string, reason: string) => {
+    try {
+      await fetch(`/api/requests/${encodeURIComponent(requestId)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'rejected',
+          actorName: currentUser.name,
+          actorId: currentUser.id,
+          actorRole: currentUser.role,
+          rejectionReason: reason
+        })
+      });
+    } catch {}
+
     const updated = storage.updateRequestStatus(requestId, 'rejected', currentUser, reason);
     if (updated) {
       await lineService.sendTeacherStatusNotification(updated, 'rejected', currentUser.name, reason);
+      await storage.syncWithServer();
       refreshAllData();
       showToast(`ไม่อนุมัติคำขอ ${updated.id} บันทึกผลเรียบร้อยแล้ว`, 'error');
     }
@@ -456,6 +530,24 @@ export default function App() {
         onResetData={handleResetData}
         onLogout={handleLogout}
       />
+
+      {/* GAS Outdated Alert Banner */}
+      {gasOutdated && (
+        <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 px-4 py-2.5 text-xs font-medium border-b border-amber-600/80 shadow-xs flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg shrink-0">⚠️</span>
+            <span className="leading-snug">
+              <strong className="font-bold">Google Apps Script ยังไม่ได้อัปเดตเวอร์ชันใหม่:</strong> เมื่อกดปุ่ม «อนุมัติ» ใน LINE บนมือถือ ระบบในเว็บจึงยังไม่เปลี่ยนสถานะอัตโนมัติ
+            </span>
+          </div>
+          <button
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="px-3.5 py-1.5 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-bold text-xs cursor-pointer shadow-sm transition-all whitespace-nowrap active:scale-95"
+          >
+            กดดูวิธีอัปเดตใน 1 นาที (เพียงเลือกเวอร์ชันใหม่) →
+          </button>
+        </div>
+      )}
 
       {/* Body Content Container (pb-24 on mobile to accommodate bottom nav bar) */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 sm:pb-8">

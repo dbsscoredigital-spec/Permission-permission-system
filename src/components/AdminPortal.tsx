@@ -2186,60 +2186,66 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
                 </div>
 
-                {/* Primary Webhook URL Box: Direct Public Webhook (Cloudflare 200 OK) */}
-                {(() => {
-                  const directWebhook = webhookInfo.publicWebhookUrl || 'https://green-sig-cos-remarks.trycloudflare.com/api/line/webhook';
-                  return (
-                    <div className="p-3 bg-white rounded-xl border-2 border-emerald-500 shadow-sm space-y-2">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
-                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>Webhook URL สำหรับใส่ใน LINE Developers (กด Verify ผ่าน 200 OK ทันที 100%):</span>
-                        </span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full">
-                          Public HTTPS (200 OK - ไม่ติด 302)
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <code className="text-[11px] font-mono bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200 flex-1 truncate select-all text-emerald-950 font-bold">
-                          {directWebhook}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(directWebhook);
-                            alert('คัดลอก Webhook URL เรียบร้อยแล้ว!\nนำไปวางที่ LINE Developers > Messaging API > Webhook settings แล้วกด Verify ได้ทันที');
-                          }}
-                          className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shrink-0 shadow-xs transition-colors flex items-center gap-1.5"
-                        >
-                          <Copy className="w-4 h-4" />
-                          <span>คัดลอก Webhook URL</span>
-                        </button>
-                      </div>
-
-                      <p className="text-[11px] text-emerald-800">
-                        ✨ นำ URL ด้านบนนี้ไปวางในหน้า <strong>LINE Developers &gt; Webhook URL</strong> แทน URL เดิมที่ติด 302 แล้วกด <strong>Verify</strong> จะขึ้น <strong>Success 200 OK</strong> ทันที!
-                      </p>
+                {/* Primary Recommended Webhook: Google Apps Script Webhook (Permanent & Never Expires) */}
+                {localSettings.googleAppsScriptUrl ? (
+                  <div className="p-3.5 bg-white rounded-xl border-2 border-emerald-500 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Webhook URL ที่แนะนำ (Google Apps Script - ใช้งานได้ถาวร 100% ไม่หมดอายุ):</span>
+                      </span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full">
+                        แนะนำสูงสุด (Permanent HTTPS)
+                      </span>
                     </div>
-                  );
-                })()}
 
-                {/* Option 2: Google Apps Script Webhook */}
-                {localSettings.googleAppsScriptUrl && (
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-                    <span className="font-semibold text-slate-700 block text-[11px]">หรือใช้ Google Apps Script Webhook URL ของท่าน:</span>
                     <div className="flex items-center gap-2">
-                      <code className="text-[10px] font-mono bg-white p-1.5 rounded border border-slate-200 flex-1 truncate text-slate-600 select-all">
+                      <code className="text-[11px] font-mono bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200 flex-1 truncate select-all text-emerald-950 font-bold">
                         {localSettings.googleAppsScriptUrl}
                       </code>
                       <button
                         type="button"
                         onClick={() => {
                           navigator.clipboard.writeText(localSettings.googleAppsScriptUrl);
-                          alert('คัดลอก Apps Script Webhook URL แล้ว');
+                          alert('คัดลอก Google Apps Script Webhook URL เรียบร้อยแล้ว!\nนำไปวางที่ LINE Developers > Messaging API > Webhook settings แล้วกด Update ได้ทันที');
                         }}
-                        className="px-2.5 py-1 text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-800 rounded cursor-pointer font-medium"
+                        className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shrink-0 shadow-xs transition-colors flex items-center gap-1.5"
+                      >
+                        <Copy className="w-4 h-4" />
+                        <span>คัดลอก Webhook URL</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-emerald-800 leading-relaxed">
+                      💡 <strong>วิธีใช้:</strong> นำลิงก์ Google Apps Script ด้านบนไปวางในช่อง <strong>Webhook URL</strong> บน <strong>LINE Developers</strong> แทนลิงก์เดิม แล้วกดปุ่ม <strong>Update</strong> และเปิดสวิตช์ <strong>Use webhook</strong> จะใช้งานได้ทันที ถาวร ไม่หมดอายุ!
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Optional Tunnel Webhook if active */}
+                {webhookInfo.publicWebhookUrl && (
+                  <div className="p-3 bg-white rounded-xl border border-indigo-200 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <LinkIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <span>Direct Live Server Tunnel Webhook (กำลังทำงาน):</span>
+                      </span>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full">
+                        Live Tunnel
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <code className="text-[11px] font-mono bg-slate-50 p-2 rounded border border-slate-200 flex-1 truncate text-slate-800 select-all">
+                        {webhookInfo.publicWebhookUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(webhookInfo.publicWebhookUrl!);
+                          alert('คัดลอก Live Server Webhook URL แล้ว');
+                        }}
+                        className="px-3 py-1.5 text-xs bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-medium cursor-pointer"
                       >
                         คัดลอก
                       </button>

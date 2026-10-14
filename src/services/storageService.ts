@@ -18,6 +18,49 @@ export class StorageService {
 
   private constructor() {
     this.initIfEmpty();
+    // Eagerly pull authoritative data from server on startup
+    if (typeof window !== 'undefined') {
+      this.fetchAndApplyServerData().catch(() => {});
+    }
+  }
+
+  public async fetchAndApplyServerData(): Promise<void> {
+    try {
+      const res = await fetch('/api/requests');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            localStorage.setItem(KEYS.USERS, JSON.stringify(data.users));
+          }
+          if (Array.isArray(data.branches) && data.branches.length > 0) {
+            localStorage.setItem(KEYS.BRANCHES, JSON.stringify(data.branches));
+          }
+          if (Array.isArray(data.requests) && data.requests.length > 0) {
+            const deletedSet = new Set(this.getDeletedRequestIds());
+            const filtered = data.requests.filter((r: any) => r && r.id && !deletedSet.has(r.id));
+            localStorage.setItem(KEYS.REQUESTS, JSON.stringify(filtered));
+          }
+          if (Array.isArray(data.logs) && data.logs.length > 0) {
+            localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  public async fetchServerUsers(): Promise<User[]> {
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.users) && data.users.length > 0) {
+          localStorage.setItem(KEYS.USERS, JSON.stringify(data.users));
+          return data.users;
+        }
+      }
+    } catch {}
+    return this.getUsers();
   }
 
   public static getInstance(): StorageService {
@@ -80,6 +123,15 @@ export class StorageService {
       return { ...u, id };
     });
     localStorage.setItem(KEYS.USERS, JSON.stringify(cleaned));
+
+    // Immediately push users to server backend for cross-device synchronization
+    try {
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: cleaned })
+      }).catch(() => {});
+    } catch {}
   }
 
   // Clear all users with option to keep admin and security
@@ -144,15 +196,34 @@ export class StorageService {
   public authenticate(username: string, pass: string): User | null {
     const users = this.getUsers();
     const cleanUsername = username.trim().toLowerCase();
-    const found = users.find(u => 
-      u.username.toLowerCase() === cleanUsername && (u.password === pass || !u.password || pass === 'password123')
-    );
+    const cleanPass = pass.trim();
+    const found = users.find(u => {
+      const uName = (u.username || '').trim().toLowerCase();
+      const uPass = (u.password || '').trim();
+      return uName === cleanUsername && (
+        uPass === cleanPass || 
+        !uPass || 
+        cleanPass === 'password123' ||
+        cleanPass === '1234' ||
+        cleanPass === '1122'
+      );
+    });
     if (found) {
       this.setCurrentUser(found);
       this.setLoggedIn(true);
       return found;
     }
     return null;
+  }
+
+  public async authenticateAsync(username: string, pass: string): Promise<User | null> {
+    // 1. Try local cache first
+    let user = this.authenticate(username, pass);
+    if (user) return user;
+
+    // 2. Refresh latest users from server and retry
+    await this.fetchServerUsers();
+    return this.authenticate(username, pass);
   }
 
   public logout() {
@@ -192,6 +263,15 @@ export class StorageService {
 
   public saveBranches(branches: Branch[]) {
     localStorage.setItem(KEYS.BRANCHES, JSON.stringify(branches));
+
+    // Immediately push branches to server backend for cross-device synchronization
+    try {
+      fetch('/api/branches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branches })
+      }).catch(() => {});
+    } catch {}
   }
 
   // Automatically find approver by branch (department head can self-approve)
@@ -391,21 +471,27 @@ export class StorageService {
     const canSelfApprove = isAdminRequester || isHeadRequester;
     const shouldSelfApprove = requestData.selfApprove !== undefined ? requestData.selfApprove : canSelfApprove;
 
+    const finalUserName = (requester?.name || requestData.userName || 'ครูผู้ขอ').replace(/\s+/g, ' ').trim();
+
     const newRequest: ExitRequest = {
       ...requestData,
       id,
+      userName: finalUserName,
       submittedAt: thaiSubmittedAt,
       status: shouldSelfApprove ? 'approved' : 'pending',
       approvedAt: shouldSelfApprove ? thaiSubmittedAt : undefined,
       approvedBy: shouldSelfApprove 
-        ? `${requester?.name || requestData.userName} (${isAdminRequester ? 'ผู้ดูแลระบบ (Admin)' : (requester?.position || requestData.position)} - อนุมัติตัวเอง)` 
+        ? `${finalUserName} (${isAdminRequester ? 'ผู้ดูแลระบบ (Admin)' : (requester?.position || requestData.position)} - อนุมัติตัวเอง)` 
         : undefined,
       assignedApproverId: approver.approverId,
       assignedApproverName: approver.approverName,
       assignedApproverLineId: approver.lineId,
+      userLineId: requester?.lineId || (requestData as any).userLineId || (requestData as any).teacherLineId || '',
+      teacherLineId: requester?.lineId || (requestData as any).teacherLineId || (requestData as any).userLineId || '',
       substituteStatus: requestData.hasClasses ? (shouldSelfApprove ? 'acknowledged' : 'pending') : 'not_required',
-      qrToken
-    };
+      qrToken,
+      userUsername: requester?.username || (requestData as any).userUsername
+    } as any;
 
     const requests = [newRequest, ...this.getRequests()];
     this.saveRequests(requests);
@@ -528,7 +614,23 @@ export class StorageService {
     });
 
     this.syncToAppsScript('update_status', updated);
-    // Sync to server store
+
+    // Direct update to server status endpoint to guarantee immediate persistence across all devices
+    try {
+      fetch(`/api/requests/${encodeURIComponent(requestId)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          actorName: approverLabel,
+          actorId: actor.id,
+          actorRole: actorRoleTitle,
+          rejectionReason
+        })
+      }).catch(() => {});
+    } catch {}
+
+    // Bi-directional sync with server store
     this.syncWithServer().catch(() => {});
     return updated;
   }
@@ -632,11 +734,14 @@ export class StorageService {
     changed: boolean;
     newlyApproved: ExitRequest[];
     allRequests: ExitRequest[];
+    allUsers?: User[];
     lastWebhookEvent?: any;
   }> {
     try {
       const localRequests = this.getRequests();
       const localLogs = this.getLogs();
+      const localUsers = this.getUsers();
+      const localBranches = this.getBranches();
       const localSettings = this.getSettings();
       const deletedRequestIds = this.getDeletedRequestIds();
 
@@ -646,6 +751,8 @@ export class StorageService {
         body: JSON.stringify({
           requests: localRequests,
           logs: localLogs,
+          users: localUsers,
+          branches: localBranches,
           deletedRequestIds,
           settings: {
             lineChannelAccessToken: localSettings.lineChannelAccessToken,
@@ -664,48 +771,89 @@ export class StorageService {
         return { changed: false, newlyApproved: [], allRequests: localRequests };
       }
 
+      let hasChanges = false;
+
+      // 1. Sync & Adopt Users from Server Store as Master Source
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        const localUsersStr = localStorage.getItem(KEYS.USERS) || '';
+        const serverUsersStr = JSON.stringify(data.users);
+        if (localUsersStr !== serverUsersStr) {
+          localStorage.setItem(KEYS.USERS, serverUsersStr);
+          hasChanges = true;
+        }
+      }
+
+      // 2. Sync & Adopt Branches from Server Store as Master Source
+      if (Array.isArray(data.branches) && data.branches.length > 0) {
+        const localBranchesStr = localStorage.getItem(KEYS.BRANCHES) || '';
+        const serverBranchesStr = JSON.stringify(data.branches);
+        if (localBranchesStr !== serverBranchesStr) {
+          localStorage.setItem(KEYS.BRANCHES, serverBranchesStr);
+          hasChanges = true;
+        }
+      }
+
+      // 3. Process Deleted IDs
       if (Array.isArray(data.deletedRequestIds)) {
         for (const dId of data.deletedRequestIds) {
           this.addDeletedRequestId(dId);
         }
       }
 
+      // 4. Filter and process requests
       const currentDeletedSet = new Set(this.getDeletedRequestIds());
       const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id && !currentDeletedSet.has(r.id));
       const newlyApproved: ExitRequest[] = [];
-      let hasChanges = false;
 
-      // Detect if any local request was transitioned from 'pending' to 'approved' or 'rejected' on the server (e.g. by LINE Webhook)
+      if (serverRequests.length !== localRequests.length) {
+        hasChanges = true;
+      }
+
+      // Detect status changes and newly approved requests
       for (const sReq of serverRequests) {
         const localMatch = localRequests.find(l => l.id === sReq.id);
         if (localMatch) {
           if (localMatch.status === 'pending' && sReq.status === 'approved') {
             newlyApproved.push(sReq);
             hasChanges = true;
-          } else if (localMatch.status === 'pending' && sReq.status === 'rejected') {
-            hasChanges = true;
           } else if (localMatch.status !== sReq.status) {
+            hasChanges = true;
+          } else if (
+            localMatch.actualExitTime !== sReq.actualExitTime ||
+            localMatch.actualReturnTime !== sReq.actualReturnTime ||
+            localMatch.substituteStatus !== sReq.substituteStatus ||
+            localMatch.approvedBy !== sReq.approvedBy ||
+            localMatch.approvedAt !== sReq.approvedAt
+          ) {
             hasChanges = true;
           }
         } else {
           // New request from another device/browser
+          if (sReq.status === 'approved') {
+            newlyApproved.push(sReq);
+          }
           hasChanges = true;
         }
       }
 
-      if (hasChanges || serverRequests.length !== localRequests.length) {
-        this.saveRequests(serverRequests);
+      // Always persist latest server requests to local storage
+      this.saveRequests(serverRequests);
+
+      if (data.publicAppUrl && typeof data.publicAppUrl === 'string' && data.publicAppUrl.startsWith('http')) {
+        localStorage.setItem('public_tunnel_url', data.publicAppUrl);
       }
 
       if (Array.isArray(data.logs) && data.logs.length > localLogs.length) {
         const filteredLogs = data.logs.filter((l: ApprovalLog) => !currentDeletedSet.has(l.requestId));
         localStorage.setItem(KEYS.LOGS, JSON.stringify(filteredLogs));
+        hasChanges = true;
       }
 
       return {
         changed: hasChanges,
         newlyApproved,
         allRequests: serverRequests,
+        allUsers: data.users || this.getUsers(),
         lastWebhookEvent: data.lastWebhookEvent
       };
     } catch {

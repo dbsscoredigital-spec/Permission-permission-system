@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import dotenv from 'dotenv';
+import { INITIAL_USERS, INITIAL_BRANCHES } from './src/data/initialData';
 
 dotenv.config();
 
@@ -51,6 +52,8 @@ ensureTunnelRunning();
 interface ServerStore {
   requests: any[];
   logs: any[];
+  users: any[];
+  branches: any[];
   deletedRequestIds?: string[];
   settings: {
     lineChannelAccessToken?: string;
@@ -89,6 +92,72 @@ function sanitizeRequest(req: any) {
   };
 }
 
+function mergeRequest(existing: any, incoming: any) {
+  if (!existing) return sanitizeRequest(incoming);
+  if (!incoming) return existing;
+
+  // Determine winning status:
+  // An approved or rejected status always wins over pending!
+  let winningStatus = existing.status;
+  if (incoming.status === 'approved' || incoming.status === 'rejected') {
+    winningStatus = incoming.status;
+  } else if (existing.status === 'approved' || existing.status === 'rejected') {
+    winningStatus = existing.status;
+  } else {
+    winningStatus = incoming.status || existing.status || 'pending';
+  }
+
+  const isReal = (val: any) => typeof val === 'string' && val.trim().length > 0 && val !== '-';
+
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id || incoming.id,
+    userId: incoming.userId || existing.userId,
+    userName: isReal(incoming.userName) && incoming.userName !== 'ครูผู้ขอ' ? incoming.userName : (existing.userName || incoming.userName || 'ครูผู้ขอ'),
+    destination: isReal(incoming.destination) ? incoming.destination : (existing.destination || incoming.destination || '-'),
+    reason: isReal(incoming.reason) ? incoming.reason : (existing.reason || incoming.reason || '-'),
+    branchName: isReal(incoming.branchName) && incoming.branchName !== 'ช่างกลโรงงาน' ? incoming.branchName : (existing.branchName || incoming.branchName || 'ช่างกลโรงงาน'),
+    branchId: isReal(incoming.branchId) && incoming.branchId !== 'ME' ? incoming.branchId : (existing.branchId || incoming.branchId || 'ME'),
+    position: isReal(incoming.position) && incoming.position !== 'ครูผู้สอน' ? incoming.position : (existing.position || incoming.position || 'ครูผู้สอน'),
+    assignedApproverName: isReal(incoming.assignedApproverName) && incoming.assignedApproverName !== 'หัวหน้าสาขา' ? incoming.assignedApproverName : (existing.assignedApproverName || incoming.assignedApproverName || 'หัวหน้าสาขา'),
+    assignedApproverId: incoming.assignedApproverId || existing.assignedApproverId,
+    assignedApproverLineId: incoming.assignedApproverLineId || existing.assignedApproverLineId,
+    exitDate: incoming.exitDate || existing.exitDate,
+    exitTime: incoming.exitTime || existing.exitTime,
+    returnTime: incoming.returnTime || existing.returnTime,
+    notes: incoming.notes !== undefined ? incoming.notes : existing.notes,
+    hasClasses: incoming.hasClasses !== undefined ? incoming.hasClasses : existing.hasClasses,
+    travelMethod: incoming.travelMethod || existing.travelMethod || 'ตามภารกิจราชการ',
+    vehiclePlate: incoming.vehiclePlate || existing.vehiclePlate,
+    companions: incoming.companions || existing.companions,
+    userPhone: incoming.userPhone || existing.userPhone,
+    status: winningStatus,
+    approvedAt: (winningStatus === 'approved') 
+      ? (existing.status === 'approved' && existing.approvedAt ? existing.approvedAt : (incoming.approvedAt || existing.approvedAt || getThaiTimestamp())) 
+      : undefined,
+    approvedBy: (winningStatus === 'approved') 
+      ? (existing.status === 'approved' && existing.approvedBy ? existing.approvedBy : (incoming.approvedBy || existing.approvedBy || 'หัวหน้าสาขา')) 
+      : undefined,
+    rejectionReason: (winningStatus === 'rejected') 
+      ? (existing.status === 'rejected' && existing.rejectionReason ? existing.rejectionReason : (incoming.rejectionReason || existing.rejectionReason)) 
+      : undefined,
+    actualExitTime: incoming.actualExitTime || existing.actualExitTime,
+    actualReturnTime: incoming.actualReturnTime || existing.actualReturnTime,
+    checkedBySecurity: incoming.checkedBySecurity || existing.checkedBySecurity,
+    substituteStatus: (incoming.substituteStatus && incoming.substituteStatus !== 'pending') 
+      ? incoming.substituteStatus 
+      : (existing.substituteStatus || incoming.substituteStatus || 'not_required'),
+    substituteTeacherId: incoming.substituteTeacherId || existing.substituteTeacherId,
+    substituteTeacherName: incoming.substituteTeacherName || existing.substituteTeacherName,
+    substituteSubject: incoming.substituteSubject || existing.substituteSubject,
+    substituteTasks: incoming.substituteTasks || existing.substituteTasks,
+    substituteAcknowledgedAt: incoming.substituteAcknowledgedAt || existing.substituteAcknowledgedAt,
+    substituteDeclineReason: incoming.substituteDeclineReason || existing.substituteDeclineReason,
+    qrToken: existing.qrToken || incoming.qrToken
+  };
+}
+
 // Load or initialize server store
 function loadServerStore(): ServerStore {
   try {
@@ -98,9 +167,28 @@ function loadServerStore(): ServerStore {
       const rawRequests = Array.isArray(parsed.requests) ? parsed.requests : [];
       const deletedIds = Array.isArray(parsed.deletedRequestIds) ? parsed.deletedRequestIds : [];
       const deletedSet = new Set(deletedIds);
+
+      // Load users and ensure seed users exist
+      const existingUsers = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...INITIAL_USERS];
+      // Check if any INITIAL_USERS are missing in existingUsers (e.g. newly added seed users)
+      for (const iu of INITIAL_USERS) {
+        if (!existingUsers.some((eu: any) => eu.id === iu.id || (eu.username && eu.username.toLowerCase() === iu.username.toLowerCase()))) {
+          existingUsers.push(iu);
+        }
+      }
+
+      const existingBranches = Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : [...INITIAL_BRANCHES];
+      for (const ib of INITIAL_BRANCHES) {
+        if (!existingBranches.some((eb: any) => eb.id === ib.id)) {
+          existingBranches.push(ib);
+        }
+      }
+
       return {
         requests: rawRequests.map(sanitizeRequest).filter((r: any) => r && !deletedSet.has(r.id)),
         logs: Array.isArray(parsed.logs) ? parsed.logs.filter((l: any) => !deletedSet.has(l.requestId)) : [],
+        users: existingUsers,
+        branches: existingBranches,
         deletedRequestIds: deletedIds,
         settings: parsed.settings || {},
         lastWebhookEvent: parsed.lastWebhookEvent || undefined,
@@ -114,6 +202,8 @@ function loadServerStore(): ServerStore {
   return {
     requests: [],
     logs: [],
+    users: [...INITIAL_USERS],
+    branches: [...INITIAL_BRANCHES],
     deletedRequestIds: [],
     settings: {
       lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
@@ -144,7 +234,7 @@ function getThaiTimestamp(): string {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -187,6 +277,205 @@ async function startServer() {
     ).trim();
   };
 
+  // Helper to find requesting Teacher LINE ID
+  const findTeacherLineId = (targetReq: any): string | null => {
+    if (!targetReq) return null;
+    if (targetReq.userLineId && String(targetReq.userLineId).trim().startsWith('U') && !String(targetReq.userLineId).includes('U_')) {
+      return String(targetReq.userLineId).trim();
+    }
+    if (targetReq.teacherLineId && String(targetReq.teacherLineId).trim().startsWith('U') && !String(targetReq.teacherLineId).includes('U_')) {
+      return String(targetReq.teacherLineId).trim();
+    }
+    const norm = (s: string) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const reqUserNameNorm = norm(targetReq.userName);
+    const matchedUser = serverStore.users.find(u => 
+      (targetReq.userId && u.id === targetReq.userId) ||
+      (reqUserNameNorm && norm(u.name) === reqUserNameNorm) ||
+      (targetReq.userUsername && u.username === targetReq.userUsername) ||
+      (reqUserNameNorm.length > 3 && (norm(u.name).includes(reqUserNameNorm) || reqUserNameNorm.includes(norm(u.name))))
+    );
+    if (matchedUser?.lineId && String(matchedUser.lineId).trim().startsWith('U')) {
+      return String(matchedUser.lineId).trim();
+    }
+    if (targetReq.userId && String(targetReq.userId).trim().startsWith('U') && String(targetReq.userId).trim().length === 33) {
+      return String(targetReq.userId).trim();
+    }
+    return null;
+  };
+
+  // Helper to build LINE Flex Message payload for Teacher status
+  const buildTeacherStatusFlexPayload = (
+    req: any,
+    status: 'approved' | 'rejected',
+    approverName: string,
+    rejectionReason?: string
+  ) => {
+    const isApproved = status === 'approved';
+    const primaryColor = isApproved ? '#059669' : '#dc2626';
+    const tunnel = getTunnelUrl();
+    const baseUrl = (tunnel && tunnel.startsWith('http')) 
+      ? tunnel.replace(/\/$/, '') 
+      : (serverStore.settings.appUrl && serverStore.settings.appUrl.startsWith('http')
+          ? serverStore.settings.appUrl.replace(/\/$/, '')
+          : 'https://ais-dev-b5n74ksxlz6u3o5szrquja-431414357592.asia-east1.run.app');
+    
+    const viewPassUrl = isApproved
+      ? `${baseUrl}?action=view_pass&reqId=${encodeURIComponent(req.id)}`
+      : `${baseUrl}?action=view_request&reqId=${encodeURIComponent(req.id)}`;
+
+    return {
+      type: 'flex',
+      altText: isApproved
+        ? `✅ ผลการขออนุญาต: ได้รับอนุมัติแล้ว (${req.userName || 'ครูผู้ขอ'})`
+        : `❌ ผลการขออนุญาต: ไม่อนุมัติ (${req.userName || 'ครูผู้ขอ'})`,
+      contents: {
+        type: 'bubble',
+        size: 'mega',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: primaryColor,
+          paddingAll: '16px',
+          contents: [
+            {
+              type: 'text',
+              text: isApproved ? '✅ ได้รับอนุมัติออกนอกสถานศึกษา' : '❌ ไม่อนุมัติคำขอออกนอกสถานศึกษา',
+              weight: 'bold',
+              size: 'md',
+              color: '#ffffff'
+            },
+            {
+              type: 'text',
+              text: `รหัสคำขอ: ${req.id}`,
+              size: 'xs',
+              color: '#ffffff',
+              margin: 'xs'
+            }
+          ]
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'md',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👨‍🏫 ครูผู้ขอ:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.userName || '-', size: 'sm', weight: 'bold', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📅 วันที่:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.exitDate || '-', size: 'sm', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🕐 เวลา:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: `${req.exitTime || ''} – ${req.returnTime || ''} น.`, size: 'sm', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📍 สถานที่:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.destination || '-', size: 'sm', color: '#0f172a', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '✍️ ผู้อนุมัติ:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: approverName || 'ผู้อนุมัติ', size: 'sm', weight: 'bold', color: isApproved ? '#059669' : '#dc2626', flex: 5 }
+              ]
+            },
+            !isApproved && rejectionReason ? {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '⚠️ เหตุผล:', size: 'sm', color: '#b91c1c', flex: 2 },
+                { type: 'text', text: rejectionReason, size: 'sm', color: '#b91c1c', flex: 5, wrap: true }
+              ]
+            } : {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#ecfdf5',
+              paddingAll: '10px',
+              cornerRadius: '8px',
+              contents: [
+                {
+                  type: 'text',
+                  text: '🎫 ท่านสามารถเปิดระบบเพื่อแสดงบัตรผ่าน QR Code แก่เจ้าหน้าที่ รปภ. ได้เลยครับ',
+                  size: 'xs',
+                  color: '#065f46',
+                  wrap: true
+                }
+              ]
+            }
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: `แจ้งเตือนเมื่อ: ${getThaiTimestamp()} น.`,
+              size: 'xxs',
+              color: '#94a3b8',
+              align: 'center'
+            }
+          ]
+        }
+      }
+    };
+  };
+
+  // Helper to send real LINE Flex notification to requesting Teacher
+  const notifyTeacherApprovalViaLineFlex = async (
+    targetReq: any,
+    status: 'approved' | 'rejected',
+    approverName: string,
+    rejectionReason?: string
+  ): Promise<{ success: boolean; message: string; teacherLineId?: string }> => {
+    try {
+      const token = getEffectiveToken();
+      if (!token || token.startsWith('MOCK_') || token.includes('ใส่_TOKEN')) {
+        console.log('[notifyTeacherApprovalViaLineFlex] LINE Channel Access Token is not set or mock');
+        return { success: false, message: 'LINE Channel Access Token not configured' };
+      }
+
+      const teacherLineId = findTeacherLineId(targetReq);
+      if (!teacherLineId || !teacherLineId.startsWith('U') || teacherLineId.startsWith('U_')) {
+        console.log(`[notifyTeacherApprovalViaLineFlex] Valid LINE User ID for teacher not found (req: ${targetReq?.id}, user: ${targetReq?.userName})`);
+        return { success: false, message: `LINE User ID not found for teacher ${targetReq?.userName}` };
+      }
+
+      const flexPayload = buildTeacherStatusFlexPayload(targetReq, status, approverName, rejectionReason);
+      console.log(`[notifyTeacherApprovalViaLineFlex] Pushing Flex message to ${teacherLineId} for request ${targetReq?.id}...`);
+      const result = await pushToLine(token, teacherLineId, [flexPayload]);
+      if (result.ok) {
+        console.log(`[notifyTeacherApprovalViaLineFlex] Successfully delivered Flex message to teacher (${teacherLineId})`);
+        return { success: true, message: `ส่ง LINE Flex แจ้งผลให้ครูผู้ขอ (${teacherLineId}) สำเร็จ`, teacherLineId };
+      } else {
+        console.error(`[notifyTeacherApprovalViaLineFlex] Failed to send Flex message to ${teacherLineId}:`, result.data);
+        return { success: false, message: `LINE API error: ${JSON.stringify(result.data)}`, teacherLineId };
+      }
+    } catch (err: any) {
+      console.error('[notifyTeacherApprovalViaLineFlex] Exception:', err);
+      return { success: false, message: err.message || String(err) };
+    }
+  };
+
   // Forward update to Google Apps Script if configured
   const forwardToAppsScript = async (action: string, payload: any) => {
     const gasUrl = serverStore.settings.googleAppsScriptUrl;
@@ -201,6 +490,98 @@ async function startServer() {
       console.error('Error forwarding to Google Apps Script:', err);
     }
   };
+
+  // Synchronize pending requests status from Google Apps Script (e.g. when approved via LINE)
+  let isSyncingGas = false;
+  let lastGasSyncTime = 0;
+
+  const syncPendingRequestsWithGas = async () => {
+    const gasUrl = serverStore.settings.googleAppsScriptUrl;
+    if (!gasUrl || !gasUrl.startsWith('http') || isSyncingGas) return;
+
+    const now = Date.now();
+    if (now - lastGasSyncTime < 2000) return;
+    lastGasSyncTime = now;
+
+    const pendingRequests = serverStore.requests.filter(r => r && r.id && r.status === 'pending');
+    if (pendingRequests.length === 0) return;
+
+    isSyncingGas = true;
+    try {
+      const token = getEffectiveToken();
+
+      for (const pReq of pendingRequests) {
+        try {
+          const checkUrl = `${gasUrl}?reqId=${encodeURIComponent(pReq.id)}`;
+          const response = await fetch(checkUrl, { signal: AbortSignal.timeout(5000) });
+          if (!response.ok) continue;
+          const gasRes = await response.json();
+
+          if (gasRes && gasRes.found && gasRes.data) {
+            const gasData = gasRes.data;
+            const gasStatus = (gasData.status || '').toLowerCase().trim();
+
+            if (gasStatus === 'approved' || gasStatus === 'rejected') {
+              const idx = serverStore.requests.findIndex(r => r.id === pReq.id);
+              if (idx !== -1 && serverStore.requests[idx].status === 'pending') {
+                const isApprove = gasStatus === 'approved';
+                const timestamp = gasData.approvedAt ? String(gasData.approvedAt).slice(0, 19).replace('T', ' ') : getThaiTimestamp();
+                const approverName = gasData.approver || 'หัวหน้าสาขา (อนุมัติผ่าน LINE)';
+
+                serverStore.requests[idx].status = isApprove ? 'approved' : 'rejected';
+                serverStore.requests[idx].approvedAt = timestamp;
+                serverStore.requests[idx].approvedBy = approverName;
+                if (!isApprove && gasData.notes) {
+                  serverStore.requests[idx].rejectionReason = gasData.notes;
+                }
+                serverStore.requests[idx] = sanitizeRequest(serverStore.requests[idx]);
+
+                serverStore.logs.push({
+                  id: 'LOG-GAS-SYNC-' + Date.now(),
+                  requestId: pReq.id,
+                  requestSummary: `${serverStore.requests[idx].userName} ขอออกไป ${serverStore.requests[idx].destination}`,
+                  actorId: 'line-gas-approver',
+                  actorName: approverName,
+                  actorRole: 'หัวหน้าสาขา',
+                  action: isApprove ? 'approve' : 'reject',
+                  timestamp,
+                  comment: isApprove
+                    ? `หัวหน้าสาขากดอนุมัติคำขอ ${pReq.id} ผ่าน LINE เรียบร้อยแล้ว (ระบบตรวจพบและซิงค์ข้อมูลสำเร็จ)`
+                    : `หัวหน้าสาขากดไม่อนุมัติคำขอ ${pReq.id} ผ่าน LINE`
+                });
+
+                serverStore.webhookCount++;
+                serverStore.lastWebhookEvent = {
+                  timestamp: new Date().toISOString(),
+                  type: 'gas_sync_line_approval',
+                  reqId: pReq.id,
+                  action: gasStatus,
+                  summary: `ตรวจพบการกด ${isApprove ? 'อนุมัติ' : 'ไม่อนุมัติ'} คำขอ ${pReq.id} ผ่าน LINE สำเร็จ`,
+                  success: true
+                };
+
+                saveServerStore();
+
+                // Send LINE Flex Notification to Teacher
+                notifyTeacherApprovalViaLineFlex(
+                  serverStore.requests[idx],
+                  isApprove ? 'approved' : 'rejected',
+                  approverName
+                ).catch(e => console.error('Error in notifyTeacherApprovalViaLineFlex:', e));
+              }
+            }
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Error syncing pending requests with Google Apps Script:', err);
+    } finally {
+      isSyncingGas = false;
+    }
+  };
+
+  // Run GAS sync in background every 3 seconds for active pending requests
+  setInterval(syncPendingRequestsWithGas, 3000);
 
   // API 1: Verify LINE Channel Access Token & Get Bot Info
   app.post('/api/line/verify-token', async (req, res) => {
@@ -280,6 +661,14 @@ async function startServer() {
       let messagePayload: any[] = [];
       if (messages && Array.isArray(messages) && messages.length > 0) {
         messagePayload = messages;
+        const tunnelUrl = getTunnelUrl();
+        if (tunnelUrl) {
+          try {
+            const rawStr = JSON.stringify(messagePayload);
+            const replaced = rawStr.replace(/https:\/\/[^"\/]+\/api\/line\/quick-approve/g, `${tunnelUrl}/api/line/quick-approve`);
+            messagePayload = JSON.parse(replaced);
+          } catch {}
+        }
       } else if (text) {
         messagePayload = [{ type: 'text', text: String(text) }];
       } else {
@@ -324,21 +713,110 @@ async function startServer() {
     }
   });
 
+  // API 2.1: Test Sending Teacher Flex Message
+  app.post('/api/line/test-teacher-flex', async (req, res) => {
+    try {
+      const { reqId, status = 'approved', approverName = 'หัวหน้าสาขาวิชา', targetLineId } = req.body;
+      let targetReq = reqId ? serverStore.requests.find(r => r.id === reqId) : serverStore.requests[0];
+      if (!targetReq) {
+        // Sample teacher request for testing
+        targetReq = {
+          id: reqId || 'REQ-SAMPLE-001',
+          userName: 'นายเอกราช อาจณรงค์',
+          userId: 'usr-import-85625',
+          userLineId: 'U81778d734346f14e047e07cb37d1ccd1',
+          teacherLineId: 'U81778d734346f14e047e07cb37d1ccd1',
+          branchName: 'ธุรกิจดิจิทัล',
+          exitDate: '2026-10-14',
+          exitTime: '10:30',
+          returnTime: '12:00',
+          destination: 'ภารกิจราชการ',
+          reason: 'นำส่งเอกสารวิชาการ',
+          status: 'approved'
+        };
+      }
+      if (targetLineId && String(targetLineId).trim().startsWith('U')) {
+        targetReq = { ...targetReq, userLineId: targetLineId.trim(), teacherLineId: targetLineId.trim() };
+      }
+      const result = await notifyTeacherApprovalViaLineFlex(targetReq, status, approverName);
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
   // API 3: Get All Requests from server store
   app.get('/api/requests', (_req, res) => {
     res.json({
       success: true,
       requests: serverStore.requests,
       logs: serverStore.logs,
+      users: serverStore.users,
+      branches: serverStore.branches,
       lastWebhookEvent: serverStore.lastWebhookEvent,
       webhookCount: serverStore.webhookCount
     });
   });
 
-  // API 4: Sync requests between Client and Server (Bi-directional merge)
-  app.post('/api/requests/sync', (req, res) => {
+  // API 3.1: Users API
+  app.get('/api/users', (_req, res) => {
+    res.json({
+      success: true,
+      users: serverStore.users || []
+    });
+  });
+
+  app.post('/api/users', (req, res) => {
     try {
-      const { requests: clientRequests, logs: clientLogs, settings: clientSettings, deletedRequestIds: clientDeletedIds } = req.body;
+      const { users } = req.body;
+      if (Array.isArray(users) && users.length > 0) {
+        serverStore.users = users;
+        saveServerStore();
+      }
+      return res.json({
+        success: true,
+        users: serverStore.users
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // API 3.2: Branches API
+  app.get('/api/branches', (_req, res) => {
+    res.json({
+      success: true,
+      branches: serverStore.branches || []
+    });
+  });
+
+  app.post('/api/branches', (req, res) => {
+    try {
+      const { branches } = req.body;
+      if (Array.isArray(branches) && branches.length > 0) {
+        serverStore.branches = branches;
+        saveServerStore();
+      }
+      return res.json({
+        success: true,
+        branches: serverStore.branches
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // API 4: Sync requests between Client and Server (Bi-directional merge)
+  app.post('/api/requests/sync', async (req, res) => {
+    try {
+      const { 
+        requests: clientRequests, 
+        logs: clientLogs, 
+        users: clientUsers,
+        branches: clientBranches,
+        settings: clientSettings, 
+        deletedRequestIds: clientDeletedIds 
+      } = req.body;
 
       if (!serverStore.deletedRequestIds) {
         serverStore.deletedRequestIds = [];
@@ -356,6 +834,39 @@ async function startServer() {
         const deletedSet = new Set(serverStore.deletedRequestIds);
         serverStore.requests = serverStore.requests.filter(r => !deletedSet.has(r.id));
         serverStore.logs = serverStore.logs.filter(l => !deletedSet.has(l.requestId));
+      }
+
+      // Sync users bi-directionally
+      if (Array.isArray(clientUsers) && clientUsers.length > 0) {
+        if (!Array.isArray(serverStore.users) || serverStore.users.length === 0) {
+          serverStore.users = clientUsers;
+        } else {
+          // Merge client users into serverStore.users
+          for (const cUser of clientUsers) {
+            const idx = serverStore.users.findIndex(u => u.id === cUser.id || (u.username && u.username.toLowerCase() === (cUser.username || '').toLowerCase()));
+            if (idx === -1) {
+              serverStore.users.push(cUser);
+            } else {
+              serverStore.users[idx] = { ...serverStore.users[idx], ...cUser };
+            }
+          }
+        }
+      }
+
+      // Sync branches bi-directionally
+      if (Array.isArray(clientBranches) && clientBranches.length > 0) {
+        if (!Array.isArray(serverStore.branches) || serverStore.branches.length === 0) {
+          serverStore.branches = clientBranches;
+        } else {
+          for (const cBranch of clientBranches) {
+            const idx = serverStore.branches.findIndex(b => b.id === cBranch.id);
+            if (idx === -1) {
+              serverStore.branches.push(cBranch);
+            } else {
+              serverStore.branches[idx] = { ...serverStore.branches[idx], ...cBranch };
+            }
+          }
+        }
       }
 
       if (clientSettings) {
@@ -381,24 +892,11 @@ async function startServer() {
           if (sIdx === -1) {
             // New request from client, add to server
             serverStore.requests.unshift(sanitizedClientReq);
+            // Forward to Google Apps Script so it appears in Google Sheets and sends LINE notification
+            forwardToAppsScript('create_request', sanitizedClientReq);
           } else {
-            const sReq = serverStore.requests[sIdx];
-            // If server was updated via LINE webhook to approved/rejected, PRESERVE the approved/rejected status, BUT merge all request details!
-            if ((sReq.status === 'approved' || sReq.status === 'rejected') && sanitizedClientReq.status === 'pending') {
-              serverStore.requests[sIdx] = {
-                ...sanitizedClientReq,
-                ...sReq,
-                status: sReq.status,
-                approvedAt: sReq.approvedAt || sanitizedClientReq.approvedAt,
-                approvedBy: sReq.approvedBy || sanitizedClientReq.approvedBy
-              };
-            } else if (sanitizedClientReq.status !== 'pending' && sReq.status === 'pending') {
-              // Client updated status, update server
-              serverStore.requests[sIdx] = { ...sReq, ...sanitizedClientReq };
-            } else {
-              // Merge details
-              serverStore.requests[sIdx] = { ...sanitizedClientReq, ...sReq, status: sReq.status };
-            }
+            // Robust bi-directional merge: winning status (approved/rejected wins over pending) and rich fields preserved
+            serverStore.requests[sIdx] = mergeRequest(serverStore.requests[sIdx], sanitizedClientReq);
           }
         }
       }
@@ -413,20 +911,41 @@ async function startServer() {
         }
       }
 
+      // Check if any pending request was approved in LINE via Google Apps Script
+      await syncPendingRequestsWithGas();
+
       saveServerStore();
 
       return res.json({
         success: true,
         requests: serverStore.requests,
         logs: serverStore.logs,
+        users: serverStore.users,
+        branches: serverStore.branches,
         deletedRequestIds: serverStore.deletedRequestIds || [],
-        lastWebhookEvent: serverStore.lastWebhookEvent
+        lastWebhookEvent: serverStore.lastWebhookEvent,
+        publicAppUrl: getTunnelUrl() || ''
       });
     } catch (err: any) {
       return res.status(500).json({
         success: false,
         error: 'Sync error: ' + (err.message || String(err))
       });
+    }
+  });
+
+  // API 4.0.1: Explicit Force Sync with Google Apps Script / LINE
+  app.all('/api/requests/sync-gas', async (_req, res) => {
+    try {
+      await syncPendingRequestsWithGas();
+      return res.json({
+        success: true,
+        requests: serverStore.requests,
+        logs: serverStore.logs,
+        lastWebhookEvent: serverStore.lastWebhookEvent
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message || String(err) });
     }
   });
 
@@ -544,6 +1063,11 @@ async function startServer() {
       // Forward to Google Apps Script
       forwardToAppsScript('update_status', updated);
 
+      // Send LINE Flex Notification to Teacher
+      notifyTeacherApprovalViaLineFlex(updated, status, actorName || 'ผู้อนุมัติ', rejectionReason).catch(e =>
+        console.error('Error in notifyTeacherApprovalViaLineFlex:', e)
+      );
+
       return res.json({ success: true, request: updated });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message || String(err) });
@@ -562,6 +1086,150 @@ async function startServer() {
       totalWebhooksReceived: serverStore.webhookCount,
       lastWebhookEvent: serverStore.lastWebhookEvent || null
     });
+  });
+
+  // API 6.1: Check if Google Apps Script Web App is running and test LINE Webhook delivery
+  app.get('/api/line/test-gas-webhook', async (req, res) => {
+    const queryUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+    const gasUrl = queryUrl || serverStore.settings.googleAppsScriptUrl || '';
+    const token = getEffectiveToken();
+
+    // Check if user accidentally pasted a Library URL
+    if (gasUrl.includes('/library/d/')) {
+      const match = gasUrl.match(/\/library\/d\/([a-zA-Z0-9_-]+)/);
+      const scriptId = match ? match[1] : '1z68aySPejPfl9ZJCUB776oPdmoOt06MF9O1-L5mHeseaeGev--VXVcre';
+      return res.json({
+        configured: true,
+        isLibraryUrl: true,
+        scriptId,
+        editorUrl: `https://script.google.com/d/${scriptId}/edit`,
+        status: 'library_url_error',
+        error: 'ลิงก์ที่ระบุคือ «ลิงก์ไลบรารี» (Library URL) ซึ่งไม่สามารถใช้เป็น Webhook ของ LINE ได้ (LINE จะปฏิเสธด้วย Error 401 ติดรหัสผ่าน Google) กรุณากด Deploy เป็น «เว็บแอป (Web app)» เพื่อรับ URL ที่ลงท้ายด้วย /exec'
+      });
+    }
+
+    if (!gasUrl || !gasUrl.startsWith('http')) {
+      return res.json({ configured: false, error: 'ยังไม่ได้ระบุ Google Apps Script URL' });
+    }
+
+    let lineEndpointInfo: any = null;
+    if (token) {
+      try {
+        const epRes = await fetch('https://api.line.me/v2/bot/channel/webhook/endpoint', {
+          headers: { 'Authorization': 'Bearer ' + token },
+          signal: AbortSignal.timeout(4000)
+        });
+        const epData = await epRes.json();
+
+        let testRes: any = null;
+        if (epData?.endpoint) {
+          const tRes = await fetch('https://api.line.me/v2/bot/channel/webhook/test', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ endpoint: epData.endpoint }),
+            signal: AbortSignal.timeout(5000)
+          });
+          testRes = await tRes.json();
+        }
+
+        lineEndpointInfo = {
+          registeredEndpoint: epData?.endpoint || '',
+          active: epData?.active || false,
+          testSuccess: testRes?.success || false,
+          statusCode: testRes?.statusCode || null,
+          reason: testRes?.reason || null
+        };
+      } catch (err: any) {
+        lineEndpointInfo = { error: err.message };
+      }
+    }
+
+    try {
+      const pingRes = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          events: [{
+            type: 'postback',
+            replyToken: 'test-ping-token',
+            source: { userId: 'Utest' },
+            postback: { data: 'action=ping' }
+          }]
+        }),
+        signal: AbortSignal.timeout(6000)
+      });
+      const text = await pingRes.text();
+      const isOutdated = text.includes('ReferenceError: handleLineEvents is not defined');
+      return res.json({
+        configured: true,
+        isOutdated,
+        status: isOutdated ? 'outdated_gas' : 'ready',
+        lineEndpointInfo
+      });
+    } catch (err: any) {
+      return res.json({ configured: true, error: err.message, lineEndpointInfo });
+    }
+  });
+
+  // API 6.2: Auto Sync Webhook URL to LINE Developers Console
+  app.post('/api/line/sync-webhook-to-line', async (req, res) => {
+    try {
+      const targetEndpoint = (req.body?.endpoint || serverStore.settings.googleAppsScriptUrl || '').trim();
+      const token = getEffectiveToken();
+
+      if (!token) {
+        return res.status(400).json({ success: false, error: 'ไม่พบ LINE Channel Access Token' });
+      }
+
+      if (!targetEndpoint || !targetEndpoint.startsWith('https://script.google.com/macros/s/') || !targetEndpoint.endsWith('/exec')) {
+        return res.status(400).json({
+          success: false,
+          error: 'URL ต้องขึ้นต้นด้วย https://script.google.com/macros/s/ และลงท้ายด้วย /exec (URL ของเว็บแอปเท่านั้น ไม่ใช่ลิงก์ไลบรารี)'
+        });
+      }
+
+      // Update LINE Webhook endpoint
+      const updateRes = await fetch('https://api.line.me/v2/bot/channel/webhook/endpoint', {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ endpoint: targetEndpoint })
+      });
+
+      if (!updateRes.ok) {
+        const errText = await updateRes.text();
+        return res.status(400).json({ success: false, error: 'LINE API ปฏิเสธการบันทึก: ' + errText });
+      }
+
+      // Test webhook delivery
+      const testRes = await fetch('https://api.line.me/v2/bot/channel/webhook/test', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ endpoint: targetEndpoint })
+      });
+
+      const testData = await testRes.json();
+
+      // Update in server store
+      serverStore.settings.googleAppsScriptUrl = targetEndpoint;
+      saveServerStore();
+
+      return res.json({
+        success: true,
+        endpoint: targetEndpoint,
+        testResult: testData
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
   });
 
   // API 7: Simulate Webhook Approval from Admin UI (For Testing)
@@ -615,6 +1283,13 @@ async function startServer() {
 
       saveServerStore();
 
+      // Send LINE Flex Notification to Teacher
+      notifyTeacherApprovalViaLineFlex(
+        idx !== -1 ? serverStore.requests[idx] : null,
+        isApprove ? 'approved' : 'rejected',
+        approverName
+      ).catch(e => console.error('Error in test simulate flex:', e));
+
       return res.json({
         success: true,
         message: `จำลองการกด${isApprove ? 'อนุมัติ' : 'ไม่อนุมัติ'}คำขอ ${reqId} สำเร็จเรียบร้อยแล้ว`,
@@ -622,6 +1297,134 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // API 7.1: 1-Click Instant Approval Link from LINE (Works directly in browser without relying on webhook)
+  app.get('/api/line/quick-approve', async (req, res) => {
+    try {
+      const { reqId, action = 'approve', reason = '' } = req.query as { reqId: string; action: string; reason: string };
+      if (!reqId) {
+        return res.status(400).send('<h1>กรุณาระบุรหัสคำขอ (reqId)</h1>');
+      }
+
+      const isApprove = action === 'approve';
+      const timestamp = getThaiTimestamp();
+      const token = getEffectiveToken();
+
+      const idx = serverStore.requests.findIndex(r => r.id === reqId);
+      let targetReq: any = null;
+
+      if (idx !== -1) {
+        serverStore.requests[idx].status = isApprove ? 'approved' : 'rejected';
+        serverStore.requests[idx].approvedAt = timestamp;
+        serverStore.requests[idx].approvedBy = 'หัวหน้าสาขา (อนุมัติผ่าน LINE)';
+        if (!isApprove && reason) {
+          serverStore.requests[idx].rejectionReason = String(reason);
+        }
+        serverStore.requests[idx] = sanitizeRequest(serverStore.requests[idx]);
+        targetReq = serverStore.requests[idx];
+      } else {
+        targetReq = sanitizeRequest({
+          id: reqId,
+          userName: 'ครูผู้ขอ',
+          branchName: 'ช่างกลโรงงาน',
+          status: isApprove ? 'approved' : 'rejected',
+          approvedAt: timestamp,
+          approvedBy: 'หัวหน้าสาขา (อนุมัติผ่าน LINE)',
+          rejectionReason: !isApprove && reason ? String(reason) : undefined
+        });
+        serverStore.requests.unshift(targetReq);
+      }
+
+      serverStore.logs.push({
+        id: 'LOG-LINE-QUICK-' + Date.now(),
+        requestId: reqId,
+        requestSummary: targetReq?.destination ? `${targetReq.userName} (${targetReq.branchName}) ขอออกไป ${targetReq.destination}` : `คำขอ ${reqId}`,
+        actorId: 'line-head',
+        actorName: 'หัวหน้าสาขา (ผ่าน LINE)',
+        actorRole: 'หัวหน้าสาขา',
+        action: isApprove ? 'approve' : 'reject',
+        timestamp,
+        comment: isApprove
+          ? `หัวหน้าสาขากดอนุมัติคำขอ ${reqId} ผ่านลิงก์ LINE บนสมาร์ทโฟนสำเร็จ`
+          : `หัวหน้าสาขากดไม่อนุมัติคำขอ ${reqId} ผ่านลิงก์ LINE บนสมาร์ทโฟน`
+      });
+
+      serverStore.webhookCount++;
+      serverStore.lastWebhookEvent = {
+        timestamp: new Date().toISOString(),
+        type: 'quick_approve_link',
+        reqId,
+        action,
+        summary: `หัวหน้าสาขากด ${isApprove ? 'อนุมัติ' : 'ไม่อนุมัติ'} คำขอ ${reqId} ผ่านลิงก์ด่วน LINE สำเร็จ`,
+        success: true
+      };
+
+      saveServerStore();
+
+      // Forward to Google Apps Script
+      forwardToAppsScript('update_status', targetReq);
+
+      // Send real LINE Flex Message to Teacher
+      await notifyTeacherApprovalViaLineFlex(
+        targetReq,
+        isApprove ? 'approved' : 'rejected',
+        'หัวหน้าสาขา (ผ่าน LINE)',
+        reason
+      );
+
+      // Check format query (e.g. format=redirect)
+      const format = (req.query.format as string) || '';
+      if (format === 'redirect') {
+        return res.redirect(`/?action=direct_approved&reqId=${encodeURIComponent(reqId)}&status=${action}`);
+      }
+
+      // Return a clean, mobile-optimized Thai confirmation screen for LINE in-app browser
+      const htmlResponse = `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${isApprove ? 'อนุมัติเรียบร้อย' : 'ไม่อนุมัติคำขอ'}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Prompt", sans-serif; background: #f8fafc; padding: 24px 16px; text-align: center; color: #0f172a; margin: 0; }
+    .card { max-width: 420px; margin: 20px auto; background: #ffffff; border-radius: 28px; padding: 32px 20px; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.08); border: 2px solid ${isApprove ? '#bbf7d0' : '#fecdd3'}; }
+    .icon { width: 68px; height: 68px; border-radius: 22px; background: ${isApprove ? '#dcfce7' : '#ffe4e6'}; color: ${isApprove ? '#16a34a' : '#e11d48'}; font-size: 34px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-weight: bold; }
+    .title { font-size: 20px; font-weight: 800; margin: 0 0 6px; color: ${isApprove ? '#14532d' : '#881337'}; }
+    .badge { display: inline-block; padding: 4px 14px; background: #f1f5f9; border-radius: 99px; font-size: 12px; font-family: monospace; font-weight: 700; color: #475569; margin-bottom: 16px; }
+    .detail { background: #f8fafc; border-radius: 18px; padding: 16px; font-size: 13px; text-align: left; line-height: 1.8; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+    .detail-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 4px 0; }
+    .detail-row:last-child { border-bottom: none; }
+    .label { color: #64748b; }
+    .val { font-weight: 600; color: #1e293b; text-align: right; }
+    .btn { display: block; width: 100%; padding: 14px; background: ${isApprove ? '#16a34a' : '#475569'}; color: #ffffff; border-radius: 16px; font-weight: 700; text-decoration: none; font-size: 14px; box-sizing: border-box; transition: background 0.2s; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${isApprove ? '✓' : '✕'}</div>
+    <div class="title">${isApprove ? 'บันทึกอนุมัติคำขอเรียบร้อยแล้ว' : 'บันทึกไม่อนุมัติคำขอ'}</div>
+    <div class="badge">รหัสคำขอ: ${reqId}</div>
+    <div class="detail">
+      <div class="detail-row"><span class="label">ครูผู้ขอ:</span><span class="val">${targetReq?.userName || '-'}</span></div>
+      <div class="detail-row"><span class="label">สาขาวิชา:</span><span class="val">${targetReq?.branchName || '-'}</span></div>
+      <div class="detail-row"><span class="label">สถานที่:</span><span class="val">${targetReq?.destination || '-'}</span></div>
+      <div class="detail-row"><span class="label">วันที่/เวลา:</span><span class="val">${targetReq?.exitDate || '-'} (${targetReq?.exitTime || ''}–${targetReq?.returnTime || ''} น.)</span></div>
+      <div class="detail-row"><span class="label">สถานะล่าสุด:</span><span class="val" style="color: ${isApprove ? '#16a34a' : '#e11d48'}; font-weight: 800;">${isApprove ? 'อนุมัติแล้ว (Approved)' : 'ไม่อนุมัติ (Rejected)'}</span></div>
+    </div>
+    <p style="font-size: 12px; color: #64748b; margin-bottom: 20px; line-height: 1.5;">
+      ${isApprove ? '🎉 ระบบได้ปรับสถานะในระบบเว็บและแจ้งเตือนออกบัตรผ่าน QR Code แก่ครูเรียบร้อยแล้ว ท่านสามารถปิดหน้านี้ได้ทันที' : 'ระบบได้บันทึกสถานะไม่อนุมัติลงในระบบเรียบร้อยแล้ว'}
+    </p>
+    <a href="/?action=direct_approved&reqId=${encodeURIComponent(reqId)}" class="btn">เข้าสู่ระบบเว็บเพื่อดูรายละเอียด</a>
+  </div>
+</body>
+</html>`;
+
+      return res.send(htmlResponse);
+    } catch (err: any) {
+      console.error('Quick approve error:', err);
+      return res.status(500).send(`เกิดข้อผิดพลาดในการบันทึกผลอนุมัติ: ${err.message || String(err)}`);
     }
   });
 
@@ -757,17 +1560,12 @@ async function startServer() {
 
             saveServerStore();
 
-            // 1. Send push notification to Teacher if they have a LINE ID
-            const teacherLineId = targetReq?.teacherLineId || targetReq?.userId;
-            if (token && !token.startsWith('MOCK_') && teacherLineId && teacherLineId.startsWith('U')) {
-              const teacherMsg = isApprove
-                ? `✅ คำขอออกนอกสถานศึกษา ${reqId} ของท่านได้รับการอนุมัติแล้วผ่าน LINE!\nท่านสามารถเปิดระบบเพื่อแสดงบัตรผ่าน QR Code แก่เจ้าหน้าที่ รปภ. ได้เลยครับ`
-                : `❌ คำขอออกนอกสถานศึกษา ${reqId} ไม่ได้รับการอนุมัติ (แจ้งผ่าน LINE)`;
-
-              pushToLine(token, teacherLineId, [{ type: 'text', text: teacherMsg }]).catch(e =>
-                console.error('Error notifying teacher via LINE:', e)
-              );
-            }
+            // 1. Send real LINE Flex Message to Teacher
+            await notifyTeacherApprovalViaLineFlex(
+              targetReq,
+              isApprove ? 'approved' : 'rejected',
+              'หัวหน้าสาขา (ผ่าน LINE)'
+            );
 
             // 2. Forward update to Google Apps Script if URL exists
             forwardToAppsScript('update_status', targetReq);
@@ -791,7 +1589,7 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);

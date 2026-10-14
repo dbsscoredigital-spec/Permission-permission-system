@@ -10,7 +10,11 @@ import {
   LogIn, 
   AlertCircle,
   HelpCircle,
-  ShieldCheck
+  ShieldCheck,
+  Search,
+  CheckCircle,
+  Sparkles,
+  Users
 } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -31,6 +35,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showQuickSelect, setShowQuickSelect] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+
+  // Live available users from props or fetched from server
+  const [availableUsers, setAvailableUsers] = useState<User[]>(users && users.length > 0 ? users : storage.getUsers());
+
+  // Load latest users from server on mount to ensure newly added users always appear
+  useEffect(() => {
+    storage.fetchServerUsers().then(latest => {
+      if (Array.isArray(latest) && latest.length > 0) {
+        setAvailableUsers(latest);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Update when users prop changes
+  useEffect(() => {
+    if (Array.isArray(users) && users.length > 0) {
+      setAvailableUsers(users);
+    }
+  }, [users]);
 
   // Load remembered credentials on mount
   useEffect(() => {
@@ -42,7 +67,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
     }
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleSelectUser = (u: User) => {
+    setUsername(u.username);
+    setPassword(u.password || '1234');
+    setShowQuickSelect(false);
+    setErrorMessage('');
+  };
+
+  const handleQuickLogin = async (u: User) => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const authenticatedUser = await storage.authenticateAsync(u.username, u.password || '1234');
+      setIsLoading(false);
+      if (authenticatedUser) {
+        storage.saveRememberedCredentials(u.username, u.password || '1234', true);
+        onLoginSuccess(authenticatedUser);
+      } else {
+        // Fallback: direct login with user object
+        storage.setCurrentUser(u);
+        storage.setLoggedIn(true);
+        onLoginSuccess(u);
+      }
+    } catch {
+      setIsLoading(false);
+      storage.setCurrentUser(u);
+      storage.setLoggedIn(true);
+      onLoginSuccess(u);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -59,8 +114,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const authenticatedUser = storage.authenticate(trimmedUsername, password);
+    try {
+      const authenticatedUser = await storage.authenticateAsync(trimmedUsername, password);
       setIsLoading(false);
 
       if (authenticatedUser) {
@@ -69,8 +124,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
       } else {
         setErrorMessage('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบและลองใหม่อีกครั้ง');
       }
-    }, 250);
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('เกิดข้อผิดพลาดในการตรวจสอบข้อมูล กรุณาลองใหม่อีกครั้ง');
+    }
   };
+
+  const filteredUsers = availableUsers.filter(u => {
+    const q = userSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.branchName || '').toLowerCase().includes(q) ||
+      (u.position || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-100 via-slate-50 to-indigo-50/40 flex flex-col justify-center items-center p-4 sm:p-6">
@@ -96,6 +165,84 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
             <span>เข้าสู่ระบบสำหรับครูและบุคลากร</span>
           </div>
         </div>
+
+        {/* Quick User Selection Bar for Mobile Ease */}
+        <div className="p-3 bg-indigo-50/80 border-b border-indigo-100 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-indigo-900 font-semibold">
+            <Users className="w-4 h-4 text-indigo-600" />
+            <span>ผู้ใช้งานในระบบ ({availableUsers.length} ท่าน)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowQuickSelect(!showQuickSelect)}
+            className="px-2.5 py-1 bg-white hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg font-bold text-[11px] shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+          >
+            <Sparkles className="w-3 h-3 text-indigo-500" />
+            <span>{showQuickSelect ? 'ปิดรายชื่อ' : 'เลือกผู้ใช้งานทันที'}</span>
+          </button>
+        </div>
+
+        {/* Quick Select Drawer */}
+        {showQuickSelect && (
+          <div className="p-4 bg-slate-50 border-b border-slate-200 max-h-72 overflow-y-auto space-y-2 animate-in fade-in">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="ค้นหาชื่อ, สาขา, ชื่อผู้ใช้..."
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+              />
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              {filteredUsers.map((u, i) => (
+                <div
+                  key={`user-choice-${u.id}-${i}`}
+                  className="bg-white hover:bg-indigo-50/60 border border-slate-200 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-slate-900 truncate">{u.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                        u.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                        u.role === 'approver' ? 'bg-emerald-100 text-emerald-700' :
+                        u.role === 'security' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {u.role === 'admin' ? 'Admin' : u.role === 'approver' ? 'หัวหน้าสาขา' : u.role === 'security' ? 'รปภ.' : 'ครู'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                      สาขา: {u.branchName || '-'} • Username: <span className="font-mono text-slate-700 font-medium">{u.username}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectUser(u)}
+                      className="px-2 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 rounded-lg text-[11px] font-medium cursor-pointer"
+                    >
+                      เลือก
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickLogin(u)}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer active:scale-98"
+                    >
+                      เข้าสู่ระบบ
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {filteredUsers.length === 0 && (
+                <p className="text-center text-xs text-slate-400 py-3">ไม่พบรายชื่อผู้ใช้งานที่ค้นหา</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Login Form Body */}
         <form onSubmit={handleLogin} className="p-6 sm:p-8 space-y-5">
@@ -196,25 +343,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
 
             {showHelp && (
               <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-left text-xs space-y-1.5 animate-in fade-in">
-                <div className="font-semibold text-slate-700 text-[11px] pb-1 border-b border-slate-200">
-                  บัญชีผู้ใช้งานมาตรฐาน:
-                </div>
-                <div className="flex justify-between items-center text-[11px]">
-                  <span className="text-slate-500">ครูผู้สอน:</span>
-                  <span className="font-mono font-medium text-slate-800">teacher_64661 / password123</span>
-                </div>
-                <div className="flex justify-between items-center text-[11px]">
-                  <span className="text-slate-500">หัวหน้าสาขาวิชา:</span>
-                  <span className="font-mono font-medium text-slate-800">teacher_64665 / password123</span>
+                <div className="font-semibold text-slate-700 text-[11px] pb-1 border-b border-slate-200 flex items-center justify-between">
+                  <span>บัญชีผู้ใช้งานในระบบ ({availableUsers.length} ท่าน):</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickSelect(true)}
+                    className="text-indigo-600 hover:underline font-bold"
+                  >
+                    ดูทั้งหมด
+                  </button>
                 </div>
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-500">ผู้ดูแลระบบ (Admin):</span>
-                  <span className="font-mono font-medium text-slate-800">admin / password123</span>
+                  <span className="font-mono font-medium text-slate-800">admin / 1122 (หรือ 1234)</span>
                 </div>
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-500">รปภ. ประตู:</span>
                   <span className="font-mono font-medium text-slate-800">guard / password123</span>
                 </div>
+                {availableUsers.slice(0, 3).map((u, idx) => (
+                  <div key={`help-user-${u.id}-${idx}`} className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-500 truncate max-w-[150px]">{u.name}:</span>
+                    <span className="font-mono font-medium text-slate-800">{u.username} / {u.password || '1234'}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -229,3 +381,4 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
     </div>
   );
 };
+

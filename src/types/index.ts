@@ -32,6 +32,8 @@ export interface ExitRequest {
   branchName: string;
   position: string;
   userPhone?: string;
+  userLineId?: string;
+  teacherLineId?: string;
   
   submittedAt: string; // ISO string or Thai date
   exitDate: string; // YYYY-MM-DD

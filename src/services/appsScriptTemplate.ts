@@ -103,15 +103,115 @@ function doPost(e) {
   }
 }
 
-// ตรวจสอบข้อมูลคำขอ หรือตรวจสอบ QR ผ่าน GET request
+// ตรวจสอบข้อมูลคำขอ ตรวจสอบ QR หรืออนุมัติผ่านลิงก์ 1-Click
 function doGet(e) {
-  const reqId = e.parameter.reqId;
-  const qrToken = e.parameter.qrToken;
+  const p = (e && e.parameter) || {};
+  const reqId = String(p.reqId || p.id || p.requestId || "").trim();
+  const qrToken = String(p.qrToken || p.token || "").trim();
+  const action = String(p.action || "").toLowerCase().trim();
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reqSheet = ss.getSheetByName("Requests");
   const data = reqSheet.getDataRange().getValues();
 
+  // 1. ดึงรายการคำขอทั้งหมด (สำหรับ Sync กับ Web App)
+  if (action === "get_all" || action === "sync") {
+    const list = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[0]) continue;
+      list.push({
+        id: row[0],
+        submittedAt: row[1],
+        userName: row[2],
+        branchName: row[3],
+        exitDate: row[4],
+        exitTime: row[5],
+        returnTime: row[6],
+        destination: row[7],
+        reason: row[8],
+        approver: row[9],
+        status: row[10] || "pending",
+        approvedAt: row[11],
+        notes: row[12],
+        travelMethod: row[13],
+        qrToken: row[14]
+      });
+    }
+    return ContentService.createTextOutput(JSON.stringify({ found: true, requests: list }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 2. กดอนุมัติ/ไม่อนุมัติผ่านลิงก์ 1-Click ใน LINE (เปิดในมือถือหรือ LINE In-App Browser ได้ทันที)
+  if (reqId && (action === "approve" || action === "reject" || action === "direct_approve" || action === "direct_reject")) {
+    const isApprove = action.indexOf("approve") !== -1;
+    let logSheet = ss.getSheetByName("ApprovalLog");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("ApprovalLog");
+      logSheet.appendRow(["LogID", "RequestID", "ApproverName", "Action", "Timestamp", "Notes"]);
+    }
+
+    let matchedRow = -1;
+    let matchedReq = null;
+
+    for (let i = 1; i < data.length; i++) {
+      const cellId = String(data[i][0] || "").trim().toUpperCase();
+      if (cellId === reqId.toUpperCase()) {
+        matchedRow = i + 1;
+        matchedReq = {
+          id: data[i][0],
+          submittedAt: data[i][1],
+          userName: data[i][2],
+          branchName: data[i][3],
+          exitDate: data[i][4],
+          exitTime: data[i][5],
+          returnTime: data[i][6],
+          destination: data[i][7],
+          reason: data[i][8],
+          assignedApproverName: data[i][9],
+          status: isApprove ? "approved" : "rejected",
+          userId: data[i][2]
+        };
+        break;
+      }
+    }
+
+    const now = new Date();
+    if (matchedRow > 0) {
+      reqSheet.getRange(matchedRow, 11).setValue(isApprove ? "approved" : "rejected");
+      reqSheet.getRange(matchedRow, 12).setValue(now);
+
+      logSheet.appendRow([
+        "LOG-" + now.getTime(),
+        reqId,
+        "หัวหน้าสาขา (อนุมัติผ่าน LINE)",
+        isApprove ? "approve" : "reject",
+        now,
+        isApprove ? "หัวหน้าสาขากดอนุมัติคำขอผ่านลิงก์ LINE สำเร็จ" : "หัวหน้าสาขากดไม่อนุมัติคำขอผ่านลิงก์ LINE"
+      ]);
+
+      if (matchedReq) {
+        sendLineNotificationToTeacher(matchedReq);
+      }
+    }
+
+    const statusTitle = isApprove ? 'อนุมัติเรียบร้อยแล้ว' : 'ไม่อนุมัติคำขอ';
+    const teacherName = matchedReq ? matchedReq.userName : '-';
+    const branchName = matchedReq ? matchedReq.branchName : '-';
+    const dest = matchedReq ? matchedReq.destination : '-';
+    const timeRange = matchedReq ? (matchedReq.exitTime + ' – ' + matchedReq.returnTime + ' น.') : '-';
+
+    const htmlContent = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>' + statusTitle + '</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Prompt",sans-serif;background:#f0fdf4;padding:24px 16px;text-align:center;color:#0f172a}.card{max-width:420px;margin:16px auto;background:#ffffff;border-radius:28px;padding:32px 22px;box-shadow:0 12px 36px -8px rgba(0,0,0,0.08);border:2px solid ' + (isApprove ? '#86efac' : '#fca5a5') + '}.icon-box{width:76px;height:76px;border-radius:24px;background:' + (isApprove ? '#dcfce7' : '#ffe4e6') + ';color:' + (isApprove ? '#16a34a' : '#e11d48') + ';font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-weight:900}.title{font-size:21px;font-weight:800;color:' + (isApprove ? '#14532d' : '#881337') + ';margin-bottom:6px}.req-badge{display:inline-block;padding:5px 16px;background:#f1f5f9;border-radius:999px;font-size:12px;font-weight:700;color:#334155;margin-bottom:18px}.detail-box{background:#f8fafc;border-radius:20px;padding:16px;font-size:13px;text-align:left;line-height:1.8;border:1px solid #e2e8f0;margin-bottom:20px}.row{display:flex;justify-content:space-between;border-bottom:1px dashed #e2e8f0;padding:4px 0}.row:last-child{border-bottom:none}.lbl{color:#64748b}.val{font-weight:700;color:#0f172a;text-align:right}.success-desc{font-size:12px;color:#15803d;background:#dcfce7;border:1px solid #86efac;border-radius:14px;padding:10px 12px;margin-bottom:20px;line-height:1.6;text-align:left}.close-btn{display:block;width:100%;padding:14px;background:' + (isApprove ? '#16a34a' : '#475569') + ';color:#ffffff;border-radius:18px;font-weight:700;border:none;font-size:14px;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.25)}</style></head><body><div class="card"><div class="icon-box">' + (isApprove ? '✓' : '✕') + '</div><div class="title">' + (isApprove ? 'บันทึกการอนุมัติสำเร็จแล้ว' : 'บันทึกไม่อนุมัติคำขอ') + '</div><div class="req-badge">รหัสคำขอ: ' + reqId + '</div><div class="detail-box"><div class="row"><span class="lbl">ครูผู้ขอ:</span><span class="val">' + teacherName + '</span></div><div class="row"><span class="lbl">สาขาวิชา:</span><span class="val">' + branchName + '</span></div><div class="row"><span class="lbl">สถานที่:</span><span class="val">' + dest + '</span></div><div class="row"><span class="lbl">เวลา:</span><span class="val">' + timeRange + '</span></div><div class="row"><span class="lbl">สถานะ:</span><span class="val" style="color:' + (isApprove ? '#16a34a' : '#e11d48') + ';font-weight:800">' + (isApprove ? 'อนุมัติแล้ว (Approved)' : 'ไม่อนุมัติ (Rejected)') + '</span></div></div><div class="success-desc">✓ ระบบได้ปรับปรุงสถานะในระบบเว็บ ทั้งของผู้ขอและของหัวหน้าสาขาเรียบร้อยแล้ว<br>✓ ส่งแจ้งเตือนออกบัตรผ่าน QR Code ไปยัง LINE ของครูเรียบร้อยแล้ว</div><button type="button" class="close-btn" onclick="window.close();">✓ ปิดหน้านี้และกลับสู่ LINE</button></div></body></html>';
+    const out = HtmlService.createHtmlOutput(htmlContent);
+    try {
+      if (HtmlService && HtmlService.XFrameOptionsMode && HtmlService.XFrameOptionsMode.ALLOWALL) {
+        out.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // 3. ตรวจสอบข้อมูลคำขอรายรายการตาม reqId หรือ qrToken
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if ((reqId && row[0] === reqId) || (qrToken && row[14] === qrToken)) {
@@ -177,7 +277,7 @@ function handleLineEvents(events) {
       if (isApprove) action = "approve";
 
       if (action) {
-        const match = msgText.match(/REQ-[\w-]+/i);
+        const match = msgText.match(/REQ-[\\w-]+/i);
         if (match) {
           reqId = match[0].toUpperCase();
         } else {
@@ -242,14 +342,23 @@ function handleLineEvents(events) {
           sendLineNotificationToTeacher(matchedReq);
         }
 
-        // ไม่ต้องส่งข้อความตอบกลับหาหัวหน้าสาขาเพิ่มเติม เพื่อประหยัดโควต้าข้อความ LINE
+        // ส่งข้อความตอบกลับยืนยันให้หัวหน้าสาขาทันทีในห้องแชท LINE (ไม่เสียโควต้าข้อความ)
+        if (event.replyToken && token) {
+          replyToLine(token, event.replyToken, [
+            {
+              type: "text",
+              text: isApprove
+                ? "✅ อนุมัติคำขอ " + reqId + " ของครู" + (matchedReq ? matchedReq.userName : "") + " เรียบร้อยแล้ว\\n\\n✓ ในระบบเว็บได้เปลี่ยนสถานะเป็น «อนุมัติแล้ว» ให้ทั้งครูผู้ขอและหัวหน้าสาขาเรียบร้อยแล้ว\\n✓ ระบบส่งบัตรผ่าน QR Code ให้แก่ครูผู้ขอทาง LINE เรียบร้อยแล้ว"
+                : "❌ บันทึกผล «ไม่อนุมัติ» คำขอ " + reqId + " เรียบร้อยแล้ว"
+            }
+          ]);
+        }
       }
     }
-  }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "LINE events processed" }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "LINE events processed" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 
 // 1. จัดการสร้างคำขอใหม่
 function handleCreateRequest(req) {
@@ -360,6 +469,17 @@ function sendLineFlexMessageToApprover(req) {
   const approverLineId = getApproverLineId(req.branchId);
   if (!approverLineId) return;
 
+  let scriptUrl = "";
+  try {
+    scriptUrl = ScriptApp.getService().getUrl();
+  } catch (e) {}
+  if (!scriptUrl) {
+    scriptUrl = "https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec";
+  }
+
+  const approveLink = scriptUrl + (scriptUrl.indexOf("?") === -1 ? "?" : "&") + "action=approve&reqId=" + encodeURIComponent(req.id);
+  const rejectLink = scriptUrl + (scriptUrl.indexOf("?") === -1 ? "?" : "&") + "action=reject&reqId=" + encodeURIComponent(req.id);
+
   const flexPayload = {
     to: approverLineId,
     messages: [{
@@ -392,27 +512,46 @@ function sendLineFlexMessageToApprover(req) {
         },
         footer: {
           type: "box",
-          layout: "horizontal",
-          spacing: "sm",
+          layout: "vertical",
+          spacing: "xs",
           contents: [
             {
-              type: "button",
-              style: "primary",
-              color: "#16a34a",
-              action: {
-                type: "postback",
-                label: "✅ อนุมัติ",
-                data: "action=approve&reqId=" + req.id
-              }
+              type: "box",
+              layout: "horizontal",
+              spacing: "sm",
+              contents: [
+                {
+                  type: "button",
+                  style: "primary",
+                  color: "#16a34a",
+                  action: {
+                    type: "postback",
+                    label: "✅ กดอนุมัติทันที",
+                    data: "action=approve&reqId=" + encodeURIComponent(req.id),
+                    displayText: "อนุมัติ " + req.id
+                  }
+                },
+                {
+                  type: "button",
+                  style: "secondary",
+                  color: "#ef4444",
+                  action: {
+                    type: "postback",
+                    label: "❌ ไม่อนุมัติ",
+                    data: "action=reject&reqId=" + encodeURIComponent(req.id),
+                    displayText: "ไม่อนุมัติ " + req.id
+                  }
+                }
+              ]
             },
             {
               type: "button",
-              style: "secondary",
-              color: "#ef4444",
+              style: "link",
+              height: "sm",
               action: {
-                type: "postback",
-                label: "❌ ไม่อนุมัติ",
-                data: "action=reject&reqId=" + req.id
+                type: "uri",
+                label: "🌐 เปิดดูในระบบเว็บ",
+                uri: approveLink
               }
             }
           ]
@@ -432,18 +571,136 @@ function sendLineFlexMessageToApprover(req) {
   });
 }
 
-// 4. ส่งข้อความแจ้งเตือนผลกลับไปยังครูผู้ขอ
+// 4. ส่งข้อความแจ้งเตือนผลกลับไปยังครูผู้ขอ (LINE Flex Message)
 function sendLineNotificationToTeacher(req) {
   const token = getSettingValue("LINE_CHANNEL_ACCESS_TOKEN");
   if (!token || token.includes("ใส่_TOKEN")) return;
 
-  const teacherLineId = getUserLineId(req.userId);
-  if (!teacherLineId) return;
+  const teacherLineId = (req.userLineId && String(req.userLineId).trim().indexOf("U") === 0)
+    ? String(req.userLineId).trim()
+    : getUserLineId(req.userId || req.userName);
+  if (!teacherLineId || teacherLineId.indexOf("U_") === 0) return;
 
   const isApproved = req.status === "approved";
-  const msgText = isApproved 
-    ? "✅ คำขอออกนอกสถานศึกษาได้รับการอนุมัติแล้ว\\nโดย " + (req.approvedBy || req.assignedApproverName) + "\\n📅 วันที่: " + req.exitDate + " (" + req.exitTime + "-" + req.returnTime + " น.)\\nท่านสามารถเปิดบัตรผ่าน QR Code แสดงที่ป้อมยามได้ทันที"
-    : "❌ คำขอออกนอกสถานศึกษาไม่ได้รับการอนุมัติ\\nโดย " + (req.approvedBy || req.assignedApproverName) + "\\nเหตุผล: " + (req.rejectionReason || "ไม่ระบุ");
+  const primaryColor = isApproved ? "#059669" : "#dc2626";
+  const titleText = isApproved ? "✅ ได้รับอนุมัติออกนอกสถานศึกษา" : "❌ ไม่อนุมัติคำขอออกนอกสถานศึกษา";
+  const approverName = req.approvedBy || req.assignedApproverName || "หัวหน้าสาขาวิชา";
+
+  const flexMsg = {
+    type: "flex",
+    altText: isApproved
+      ? "✅ ผลการขออนุญาต: ได้รับอนุมัติแล้ว (" + (req.userName || "") + ")"
+      : "❌ ผลการขออนุญาต: ไม่อนุมัติ (" + (req.userName || "") + ")",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: primaryColor,
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: titleText,
+            weight: "bold",
+            size: "md",
+            color: "#ffffff"
+          },
+          {
+            type: "text",
+            text: "รหัสคำขอ: " + req.id,
+            size: "xs",
+            color: "#ffffff",
+            margin: "xs"
+          }
+        ]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "👨‍🏫 ครูผู้ขอ:", size: "sm", color: "#64748b", flex: 2 },
+              { type: "text", text: req.userName || "-", size: "sm", weight: "bold", color: "#0f172a", flex: 5 }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "📅 วันที่:", size: "sm", color: "#64748b", flex: 2 },
+              { type: "text", text: req.exitDate || "-", size: "sm", color: "#0f172a", flex: 5 }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "🕐 เวลา:", size: "sm", color: "#64748b", flex: 2 },
+              { type: "text", text: (req.exitTime || "") + " – " + (req.returnTime || "") + " น.", size: "sm", color: "#0f172a", flex: 5 }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "📍 สถานที่:", size: "sm", color: "#64748b", flex: 2 },
+              { type: "text", text: req.destination || "-", size: "sm", color: "#0f172a", flex: 5, wrap: true }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "✍️ ผู้อนุมัติ:", size: "sm", color: "#64748b", flex: 2 },
+              { type: "text", text: approverName, size: "sm", weight: "bold", color: isApproved ? "#059669" : "#dc2626", flex: 5 }
+            ]
+          },
+          isApproved ? {
+            type: "box",
+            layout: "vertical",
+            backgroundColor: "#ecfdf5",
+            paddingAll: "10px",
+            cornerRadius: "8px",
+            contents: [
+              {
+                type: "text",
+                text: "🎫 คำขอได้รับการอนุมัติเรียบร้อยแล้ว",
+                size: "xs",
+                color: "#065f46",
+                wrap: true
+              }
+            ]
+          } : {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "⚠️ เหตุผล:", size: "sm", color: "#b91c1c", flex: 2 },
+              { type: "text", text: req.rejectionReason || "ไม่ระบุ", size: "sm", color: "#b91c1c", flex: 5, wrap: true }
+            ]
+          }
+        ]
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          {
+            type: "text",
+            text: "แจ้งเตือนอัตโนมัติจากระบบขออนุญาตออกนอกสถานศึกษา",
+            size: "xxs",
+            color: "#94a3b8",
+            align: "center"
+          }
+        ]
+      }
+    }
+  };
 
   UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
     method: "post",
@@ -453,10 +710,31 @@ function sendLineNotificationToTeacher(req) {
     },
     payload: JSON.stringify({
       to: teacherLineId,
-      messages: [{ type: "text", text: msgText }]
+      messages: [flexMsg]
     }),
     muteHttpExceptions: true
   });
+}
+
+// Helper: ตอบกลับผู้ใช้ใน LINE ทันทีโดยใช้ replyToken (ฟรี ไม่จำกัด และไม่เสียโควต้าข้อความ)
+function replyToLine(token, replyToken, messages) {
+  if (!token || !replyToken || !messages || messages.length === 0) return;
+  try {
+    UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "post",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      payload: JSON.stringify({
+        replyToken: replyToken,
+        messages: messages
+      }),
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    Logger.log("replyToLine error: " + err);
+  }
 }
 
 // Helper: ดึงค่า Settings
@@ -480,8 +758,11 @@ function getApproverLineId(branchId) {
 
   const bData = bSheet.getDataRange().getValues();
   let approverUserId = "";
+  const bQuery = String(branchId || "").trim().toLowerCase();
   for (let i = 1; i < bData.length; i++) {
-    if (bData[i][0] === branchId || bData[i][1] === branchId) {
+    const bId = String(bData[i][0] || "").trim().toLowerCase();
+    const bName = String(bData[i][1] || "").trim().toLowerCase();
+    if (bId === bQuery || bName === bQuery || bName.indexOf(bQuery) !== -1) {
       approverUserId = bData[i][2];
       break;
     }
@@ -490,8 +771,11 @@ function getApproverLineId(branchId) {
   if (!approverUserId) return "";
 
   const uData = uSheet.getDataRange().getValues();
+  const uQuery = String(approverUserId || "").trim().toLowerCase();
   for (let j = 1; j < uData.length; j++) {
-    if (uData[j][0] === approverUserId) {
+    const rowId = String(uData[j][0] || "").trim().toLowerCase();
+    const rowName = String(uData[j][3] || "").trim().toLowerCase();
+    if (rowId === uQuery || (uQuery.length > 3 && rowName.indexOf(uQuery) !== -1)) {
       return uData[j][6]; // LINE_ID
     }
   }
@@ -504,8 +788,14 @@ function getUserLineId(userId) {
   const uSheet = ss.getSheetByName("Users");
   if (!uSheet) return "";
   const uData = uSheet.getDataRange().getValues();
+  const query = String(userId || "").replace(/\\s+/g, ' ').trim().toLowerCase();
   for (let i = 1; i < uData.length; i++) {
-    if (uData[i][0] === userId) return uData[i][6];
+    const rowId = String(uData[i][0] || "").trim().toLowerCase();
+    const rowUsername = String(uData[i][1] || "").trim().toLowerCase();
+    const rowName = String(uData[i][3] || "").replace(/\\s+/g, ' ').trim().toLowerCase();
+    if (rowId === query || rowUsername === query || (query.length > 2 && (rowName === query || rowName.indexOf(query) !== -1 || query.indexOf(rowName) !== -1))) {
+      return String(uData[i][6] || "").trim();
+    }
   }
   return "";
 }

@@ -26,9 +26,11 @@ import {
   Search,
   Filter,
   Users,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { StorageService } from '../services/storageService';
 
 interface DepartmentHeadPortalProps {
   currentUser: User;
@@ -57,6 +59,16 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   // History filter state (Strictly scoped to Department Head's own branch only)
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
+  const [syncingLine, setSyncingLine] = useState<boolean>(false);
+
+  const handleManualSyncLine = async () => {
+    setSyncingLine(true);
+    try {
+      await fetch('/api/requests/sync-gas');
+      await StorageService.getInstance().syncWithServer();
+    } catch {}
+    setTimeout(() => setSyncingLine(false), 800);
+  };
 
   // Requests assigned to this department head to review (teachers in their branch)
   const pendingTeacherRequests = requests.filter(r => 
@@ -107,6 +119,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   });
 
   const totalDecidedHistoryCount = branchHistoryRequests.length;
+  const approvedBranchRequests = branchHistoryRequests.filter(r => r.status === 'approved');
 
   // Requests submitted BY the department head themselves
   const myHeadRequests = requests.filter(r => r.userId === currentUser.id);
@@ -269,6 +282,16 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
+              type="button"
+              onClick={handleManualSyncLine}
+              disabled={syncingLine}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs border border-white/20 transition-all cursor-pointer backdrop-blur-xs shadow-xs active:scale-95"
+              title="ตรวจสอบและซิงค์การกดอนุมัติผ่าน LINE ทันที"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-300 ${syncingLine ? 'animate-spin' : ''}`} />
+              <span>{syncingLine ? 'กำลังซิงค์ผล LINE...' : '🔄 ซิงค์ผลจาก LINE'}</span>
+            </button>
+            <button
               onClick={() => {
                 setActiveSubTab('my-requests');
                 setShowCreateFormModal(true);
@@ -374,15 +397,90 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
       {activeSubTab === 'pending' && (
         <div className="space-y-4">
           {pendingTeacherRequests.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">ไม่มีคำขอค้างรออนุมัติ</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                คำขอทั้งหมดของสาขาวิชา{currentUser.branchName}ได้รับการพิจารณาเรียบร้อยแล้ว เมื่อครูในสาขายื่นคำขอใหม่ ระบบจะแจ้งเตือนมายังหน้านี้และ LINE อัตโนมัติ
-              </p>
+            <div className="space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center shadow-xs">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                <h3 className="text-base font-bold text-emerald-950">ไม่มีคำขอค้างรออนุมัติ</h3>
+                <p className="text-xs text-emerald-700 mt-1 max-w-md mx-auto">
+                  ทุกคำขอของครูในสาขาวิชา{currentUser.branchName}ได้รับการพิจารณาอนุมัติเรียบร้อยแล้ว
+                </p>
+              </div>
+
+              {approvedBranchRequests.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      <span>รายการที่อนุมัติแล้วในสาขา ({approvedBranchRequests.length} รายการ)</span>
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {approvedBranchRequests.map(req => (
+                      <div
+                        key={`approved-empty-${req.id}`}
+                        className="bg-white rounded-2xl border border-emerald-200 shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <span className="text-[11px] font-mono font-bold text-slate-400 block">{req.id}</span>
+                              <h4 className="text-base font-bold text-slate-900 mt-0.5 flex items-center gap-2">
+                                <span>{req.userName}</span>
+                                <span className="text-xs font-normal text-slate-500">({req.position})</span>
+                              </h4>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              อนุมัติแล้ว
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 text-xs text-slate-700 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>วันที่ออก: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <span>สถานที่: <strong>{req.destination}</strong></span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <span className="font-bold text-slate-500 shrink-0">เหตุผล:</span>
+                              <span className="text-slate-900 font-medium">{req.reason}</span>
+                            </div>
+                            <div className="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/80">
+                              อนุมัติเมื่อ: <strong>{req.approvedAt || 'เรียบร้อย'}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onPrintSlip(req)}
+                            className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                            <span>พิมพ์ใบขออนุญาต</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onViewQrPass(req)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                            <span>ดูบัตรผ่าน QR Code</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {pendingTeacherRequests.map(req => (
                 <div
                   key={req.id}
@@ -521,6 +619,77 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+
+            {approvedBranchRequests.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-200">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>รายการที่อนุมัติแล้วล่าสุดในสาขา ({approvedBranchRequests.length} รายการ)</span>
+                </h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {approvedBranchRequests.slice(0, 6).map(req => (
+                    <div
+                      key={`approved-bottom-${req.id}`}
+                      className="bg-white rounded-2xl border border-emerald-200 shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <span className="text-[11px] font-mono font-bold text-slate-400 block">{req.id}</span>
+                            <h4 className="text-base font-bold text-slate-900 mt-0.5 flex items-center gap-2">
+                              <span>{req.userName}</span>
+                              <span className="text-xs font-normal text-slate-500">({req.position})</span>
+                            </h4>
+                          </div>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            อนุมัติแล้ว
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 text-xs text-slate-700 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>วันที่ออก: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <span>สถานที่: <strong>{req.destination}</strong></span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="font-bold text-slate-500 shrink-0">เหตุผล:</span>
+                            <span className="text-slate-900 font-medium">{req.reason}</span>
+                          </div>
+                          <div className="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/80">
+                            อนุมัติเมื่อ: <strong>{req.approvedAt || 'เรียบร้อย'}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onPrintSlip(req)}
+                          className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          <span>พิมพ์ใบขออนุญาต</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onViewQrPass(req)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>ดูบัตรผ่าน QR Code</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             </div>
           )}
         </div>

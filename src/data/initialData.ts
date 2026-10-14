@@ -39,13 +39,41 @@ export const INITIAL_BRANCHES: Branch[] = [
   {
     id: 'GEN',
     name: 'ครูสามัญ',
-    approverUserId: 'usr-head-gen',
-    approverName: 'อ.กัญญารัตน์ อักษรศิลป์ (หัวหน้าครูสามัญ)',
+    approverUserId: 'usr-915068',
+    approverName: 'นางกนกวรรณ ธนาพล (หัวหน้าสาขาครูสามัญ)',
     color: '#db2777' // pink-600
   }
 ];
 
 export const INITIAL_USERS: User[] = [
+  // ครูสามัญ (ผู้ใช้งานจริงที่เพิ่มในระบบ)
+  {
+    id: 'usr-958043',
+    username: 'kanoksak',
+    password: 'password123',
+    name: 'นายกนกศักดิ์ บุญไทย',
+    role: 'teacher',
+    branchId: 'GEN',
+    branchName: 'ครูสามัญ',
+    position: 'ครู',
+    phone: '081-xxx-xxxx',
+    lineId: 'U_LINE_KANOKSAK',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80'
+  },
+  {
+    id: 'usr-915068',
+    username: 'kanokwan',
+    password: 'password123',
+    name: 'นางกนกวรรณ ธนาพล (หัวหน้าสาขาครูสามัญ)',
+    role: 'approver',
+    branchId: 'GEN',
+    branchName: 'ครูสามัญ',
+    position: 'หัวหน้าสาขาครูสามัญ',
+    phone: '081-xxx-xxxx',
+    lineId: 'U0b1a90a74dacb8fbb2be07d19189932c',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80'
+  },
+
   // User's Real Teachers (ช่างกลโรงงาน)
   {
     id: 'usr-import-64661',

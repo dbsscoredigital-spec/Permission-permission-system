@@ -123,8 +123,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     }
   })();
 
-  const [scopeFilter, setScopeFilter] = useState<'my' | 'branch'>('my');
-
   // Filter requests for the current user (match by user ID, or full name with space normalization, or username, or clean Thai name)
   const userRequests = requests.filter(r => {
     if (r.id && sessionReqIds.includes(r.id)) return true;
@@ -135,16 +133,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     return false;
   });
 
-  // Branch requests in current user's branch
-  const branchRequests = requests.filter(r => {
-    const headBranchId = (currentUser.branchId || '').trim().toLowerCase();
-    const headBranchName = (currentUser.branchName || '').trim().toLowerCase();
-    const reqBranchId = (r.branchId || '').trim().toLowerCase();
-    const reqBranchName = (r.branchName || '').trim().toLowerCase();
-    return (headBranchId && reqBranchId === headBranchId) || (headBranchName && reqBranchName === headBranchName);
-  });
-
-  const displayRequests = scopeFilter === 'branch' ? branchRequests : userRequests;
+  // Strictly restrict to current user's own requests (users cannot view other people from this panel)
+  const displayRequests = userRequests;
 
   const pendingRequests = displayRequests.filter(r => r.status === 'pending');
   const approvedRequests = displayRequests.filter(r => r.status === 'approved');
@@ -792,28 +782,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setScopeFilter('my')}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full cursor-pointer transition-all ${
-                  scopeFilter === 'my'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                👤 เฉพาะคำขอฉัน ({userRequests.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setScopeFilter('branch')}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full cursor-pointer transition-all ${
-                  scopeFilter === 'branch'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                🏫 ทั้งหมดในสาขา ({branchRequests.length})
-              </button>
+              <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-blue-600 text-white shadow-xs">
+                👤 คำขอของฉัน ({displayRequests.length})
+              </span>
             </div>
           </div>
           {/* Filter Bar */}

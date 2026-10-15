@@ -491,97 +491,233 @@ async function startServer() {
     }
   };
 
-  // Synchronize pending requests status from Google Apps Script (e.g. when approved via LINE)
-  let isSyncingGas = false;
-  let lastGasSyncTime = 0;
+  // Comprehensive Sheet & Time Formatter helpers
+  const formatSheetTime = (raw: any): string => {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (/^\d{1,2}:\d{2}/.test(s)) return s.slice(0, 5);
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const h = String((d.getUTCHours() + 7) % 24).padStart(2, '0');
+        const m = String(d.getUTCMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }
+    } catch {}
+    return s;
+  };
 
-  const syncPendingRequestsWithGas = async () => {
+  const formatSheetDate = (raw: any): string => {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const localMs = d.getTime() + (7 * 3600 * 1000);
+        const ld = new Date(localMs);
+        return `${ld.getUTCFullYear()}-${String(ld.getUTCMonth() + 1).padStart(2, '0')}-${String(ld.getUTCDate()).padStart(2, '0')}`;
+      }
+    } catch {}
+    return s.slice(0, 10);
+  };
+
+  const formatSheetTimestamp = (raw: any): string => {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (s.length >= 10 && !s.includes('T')) return s;
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const localMs = d.getTime() + (7 * 3600 * 1000);
+        const ld = new Date(localMs);
+        const y = ld.getUTCFullYear() > 2400 ? ld.getUTCFullYear() : ld.getUTCFullYear() + 543;
+        const mo = String(ld.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(ld.getUTCDate()).padStart(2, '0');
+        const h = String(ld.getUTCHours()).padStart(2, '0');
+        const mi = String(ld.getUTCMinutes()).padStart(2, '0');
+        return `${y}-${mo}-${day} ${h}:${mi}`;
+      }
+    } catch {}
+    return s;
+  };
+
+  // Synchronize ALL requests and pending statuses from Google Apps Script (Every device stays 100% updated)
+  let isSyncingAllGas = false;
+  let lastAllGasSyncTime = 0;
+
+  const syncAllFromGoogleAppsScript = async () => {
     const gasUrl = serverStore.settings.googleAppsScriptUrl;
-    if (!gasUrl || !gasUrl.startsWith('http') || isSyncingGas) return;
+    if (!gasUrl || !gasUrl.startsWith('http') || isSyncingAllGas) return;
 
     const now = Date.now();
-    if (now - lastGasSyncTime < 2000) return;
-    lastGasSyncTime = now;
+    if (now - lastAllGasSyncTime < 2500) return;
+    lastAllGasSyncTime = now;
 
-    const pendingRequests = serverStore.requests.filter(r => r && r.id && r.status === 'pending');
-    if (pendingRequests.length === 0) return;
-
-    isSyncingGas = true;
+    isSyncingAllGas = true;
     try {
-      const token = getEffectiveToken();
+      const checkUrl = `${gasUrl}?action=get_all`;
+      const response = await fetch(checkUrl, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) {
+        console.warn(`[syncAllFromGoogleAppsScript] GAS responded with HTTP ${response.status}`);
+        return;
+      }
+      const gasRes = await response.json();
+      if (!gasRes || !Array.isArray(gasRes.requests) || gasRes.requests.length === 0) return;
+      console.log(`[syncAllFromGoogleAppsScript] Fetched ${gasRes.requests.length} rows from Google Sheets`);
 
-      for (const pReq of pendingRequests) {
-        try {
-          const checkUrl = `${gasUrl}?reqId=${encodeURIComponent(pReq.id)}`;
-          const response = await fetch(checkUrl, { signal: AbortSignal.timeout(5000) });
-          if (!response.ok) continue;
-          const gasRes = await response.json();
+      // Deduplicate sheet rows by ID
+      const sheetMap = new Map<string, any>();
+      for (const row of gasRes.requests) {
+        if (!row || !row.id) continue;
+        const reqId = String(row.id).trim();
+        const existing = sheetMap.get(reqId);
+        if (!existing) {
+          sheetMap.set(reqId, row);
+        } else {
+          // Winning status: approved/rejected wins over pending
+          if (existing.status === 'pending' && (row.status === 'approved' || row.status === 'rejected')) {
+            sheetMap.set(reqId, { ...existing, ...row });
+          } else if (row.status === 'approved' && !existing.approvedAt && row.approvedAt) {
+            sheetMap.set(reqId, { ...existing, ...row });
+          }
+        }
+      }
 
-          if (gasRes && gasRes.found && gasRes.data) {
-            const gasData = gasRes.data;
-            const gasStatus = (gasData.status || '').toLowerCase().trim();
+      let storeChanged = false;
 
-            if (gasStatus === 'approved' || gasStatus === 'rejected') {
-              const idx = serverStore.requests.findIndex(r => r.id === pReq.id);
-              if (idx !== -1 && serverStore.requests[idx].status === 'pending') {
-                const isApprove = gasStatus === 'approved';
-                const timestamp = gasData.approvedAt ? String(gasData.approvedAt).slice(0, 19).replace('T', ' ') : getThaiTimestamp();
-                const approverName = gasData.approver || 'หัวหน้าสาขา (อนุมัติผ่าน LINE)';
+      for (const [reqId, row] of sheetMap.entries()) {
+        const rowStatus = String(row.status || 'pending').toLowerCase().trim();
+        const existingIdx = serverStore.requests.findIndex(r => r.id === reqId);
 
-                serverStore.requests[idx].status = isApprove ? 'approved' : 'rejected';
-                serverStore.requests[idx].approvedAt = timestamp;
-                serverStore.requests[idx].approvedBy = approverName;
-                if (!isApprove && gasData.notes) {
-                  serverStore.requests[idx].rejectionReason = gasData.notes;
-                }
-                serverStore.requests[idx] = sanitizeRequest(serverStore.requests[idx]);
+        // Find user by name to attach userId and lineId
+        const norm = (s: string) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const rowUserNorm = norm(row.userName);
+        const matchedUser = serverStore.users.find(u =>
+          (rowUserNorm && norm(u.name) === rowUserNorm) ||
+          (rowUserNorm.length > 3 && (norm(u.name).includes(rowUserNorm) || rowUserNorm.includes(norm(u.name))))
+        );
 
-                serverStore.logs.push({
-                  id: 'LOG-GAS-SYNC-' + Date.now(),
-                  requestId: pReq.id,
-                  requestSummary: `${serverStore.requests[idx].userName} ขอออกไป ${serverStore.requests[idx].destination}`,
-                  actorId: 'line-gas-approver',
-                  actorName: approverName,
-                  actorRole: 'หัวหน้าสาขา',
-                  action: isApprove ? 'approve' : 'reject',
-                  timestamp,
-                  comment: isApprove
-                    ? `หัวหน้าสาขากดอนุมัติคำขอ ${pReq.id} ผ่าน LINE เรียบร้อยแล้ว (ระบบตรวจพบและซิงค์ข้อมูลสำเร็จ)`
-                    : `หัวหน้าสาขากดไม่อนุมัติคำขอ ${pReq.id} ผ่าน LINE`
-                });
+        const cleanExitDate = formatSheetDate(row.exitDate);
+        const cleanExitTime = formatSheetTime(row.exitTime);
+        const cleanReturnTime = formatSheetTime(row.returnTime);
+        const cleanApprovedAt = formatSheetTimestamp(row.approvedAt);
+        const cleanSubmittedAt = formatSheetTimestamp(row.submittedAt);
 
-                serverStore.webhookCount++;
-                serverStore.lastWebhookEvent = {
-                  timestamp: new Date().toISOString(),
-                  type: 'gas_sync_line_approval',
-                  reqId: pReq.id,
-                  action: gasStatus,
-                  summary: `ตรวจพบการกด ${isApprove ? 'อนุมัติ' : 'ไม่อนุมัติ'} คำขอ ${pReq.id} ผ่าน LINE สำเร็จ`,
-                  success: true
-                };
+        if (existingIdx !== -1) {
+          const currentReq = serverStore.requests[existingIdx];
+          const previousStatus = currentReq.status;
 
-                saveServerStore();
+          // Detect status change to approved/rejected
+          if (previousStatus === 'pending' && (rowStatus === 'approved' || rowStatus === 'rejected')) {
+            const isApprove = rowStatus === 'approved';
+            const approverName = row.approver || currentReq.assignedApproverName || 'หัวหน้าสาขาวิชา';
 
-                // Send LINE Flex Notification to Teacher
-                notifyTeacherApprovalViaLineFlex(
-                  serverStore.requests[idx],
-                  isApprove ? 'approved' : 'rejected',
-                  approverName
-                ).catch(e => console.error('Error in notifyTeacherApprovalViaLineFlex:', e));
-              }
+            currentReq.status = isApprove ? 'approved' : 'rejected';
+            currentReq.approvedAt = cleanApprovedAt || getThaiTimestamp();
+            currentReq.approvedBy = approverName;
+            if (!isApprove && row.notes) {
+              currentReq.rejectionReason = row.notes;
+            }
+
+            // Make sure teacherLineId is set
+            if (!currentReq.userLineId && matchedUser?.lineId) {
+              currentReq.userLineId = matchedUser.lineId;
+              currentReq.teacherLineId = matchedUser.lineId;
+            }
+
+            serverStore.logs.push({
+              id: 'LOG-GAS-ALL-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+              requestId: reqId,
+              requestSummary: `${currentReq.userName} ขอออกไป ${currentReq.destination}`,
+              actorId: 'line-gas-approver',
+              actorName: approverName,
+              actorRole: 'หัวหน้าสาขา',
+              action: isApprove ? 'approve' : 'reject',
+              timestamp: currentReq.approvedAt,
+              comment: isApprove
+                ? `หัวหน้าสาขากดอนุมัติคำขอ ${reqId} ผ่าน LINE เรียบร้อยแล้ว (ตรวจพบและซิงค์ข้อมูลสำเร็จ)`
+                : `หัวหน้าสาขากดไม่อนุมัติคำขอ ${reqId} ผ่าน LINE`
+            });
+
+            serverStore.lastWebhookEvent = {
+              timestamp: new Date().toISOString(),
+              type: 'gas_all_sync_approval',
+              reqId,
+              action: rowStatus,
+              summary: `ตรวจพบการ ${isApprove ? 'อนุมัติ' : 'ไม่อนุมัติ'} คำขอ ${reqId} ใน Google Sheets`,
+              success: true
+            };
+
+            storeChanged = true;
+
+            // Push LINE Flex notification to requesting Teacher
+            notifyTeacherApprovalViaLineFlex(
+              currentReq,
+              isApprove ? 'approved' : 'rejected',
+              approverName
+            ).catch(e => console.error('Error in notifyTeacherApprovalViaLineFlex:', e));
+          } else {
+            // Update fields if changed
+            if (rowStatus === 'approved' && currentReq.status !== 'approved') {
+              currentReq.status = 'approved';
+              currentReq.approvedAt = cleanApprovedAt || currentReq.approvedAt;
+              currentReq.approvedBy = row.approver || currentReq.approvedBy;
+              storeChanged = true;
             }
           }
-        } catch {}
+        } else {
+          // Request exists in Google Sheets but not yet in serverStore!
+          const newReq: any = {
+            id: reqId,
+            userId: matchedUser?.id || `usr-imported-${reqId}`,
+            userName: row.userName || matchedUser?.name || 'ครูผู้ขอ',
+            branchId: matchedUser?.branchId || 'DB',
+            branchName: row.branchName || matchedUser?.branchName || 'ธุรกิจดิจิทัล',
+            position: matchedUser?.position || 'ครู',
+            userPhone: matchedUser?.phone || '',
+            userLineId: matchedUser?.lineId || '',
+            teacherLineId: matchedUser?.lineId || '',
+            userUsername: matchedUser?.username || '',
+            submittedAt: cleanSubmittedAt || getThaiTimestamp(),
+            exitDate: cleanExitDate,
+            exitTime: cleanExitTime,
+            returnTime: cleanReturnTime,
+            destination: row.destination || '',
+            reason: row.reason || '',
+            travelMethod: row.travelMethod || 'ตามภารกิจราชการ',
+            assignedApproverId: matchedUser?.branchId ? (serverStore.branches.find(b => b.id === matchedUser.branchId)?.approverUserId || '') : '',
+            assignedApproverName: row.approver || 'หัวหน้าสาขาวิชา',
+            status: rowStatus === 'approved' ? 'approved' : (rowStatus === 'rejected' ? 'rejected' : 'pending'),
+            approvedAt: cleanApprovedAt || (rowStatus === 'approved' ? getThaiTimestamp() : undefined),
+            approvedBy: rowStatus === 'approved' ? (row.approver || 'หัวหน้าสาขา') : undefined,
+            qrToken: row.qrToken || `SECURE-EXIT-${reqId}-${matchedUser?.branchId || 'GEN'}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+            hasClasses: false,
+            substituteStatus: 'not_required'
+          };
+          serverStore.requests.unshift(newReq);
+          storeChanged = true;
+        }
+      }
+
+      if (storeChanged) {
+        saveServerStore();
       }
     } catch (err) {
-      console.error('Error syncing pending requests with Google Apps Script:', err);
+      console.error('Error in syncAllFromGoogleAppsScript:', err);
     } finally {
-      isSyncingGas = false;
+      isSyncingAllGas = false;
     }
   };
 
-  // Run GAS sync in background every 3 seconds for active pending requests
-  setInterval(syncPendingRequestsWithGas, 3000);
+  const syncPendingRequestsWithGas = async () => {
+    await syncAllFromGoogleAppsScript();
+  };
+
+  // Run full GAS sync in background every 4 seconds so all devices stay identical
+  setInterval(syncAllFromGoogleAppsScript, 4000);
+  // Initial sync immediately on startup
+  syncAllFromGoogleAppsScript().catch(() => {});
 
   // API 1: Verify LINE Channel Access Token & Get Bot Info
   app.post('/api/line/verify-token', async (req, res) => {
@@ -746,13 +882,19 @@ async function startServer() {
   });
 
   // API 3: Get All Requests from server store
-  app.get('/api/requests', (_req, res) => {
+  app.get('/api/requests', async (_req, res) => {
+    // Opportunistically run gas sync if needed
+    if (Date.now() - lastAllGasSyncTime > 4000) {
+      syncAllFromGoogleAppsScript().catch(() => {});
+    }
     res.json({
       success: true,
       requests: serverStore.requests,
       logs: serverStore.logs,
       users: serverStore.users,
       branches: serverStore.branches,
+      settings: serverStore.settings,
+      deletedRequestIds: serverStore.deletedRequestIds || [],
       lastWebhookEvent: serverStore.lastWebhookEvent,
       webhookCount: serverStore.webhookCount
     });
@@ -806,6 +948,30 @@ async function startServer() {
     }
   });
 
+  // API 3.3: Settings API
+  app.get('/api/settings', (_req, res) => {
+    res.json({
+      success: true,
+      settings: serverStore.settings
+    });
+  });
+
+  app.post('/api/settings', (req, res) => {
+    try {
+      const { settings } = req.body;
+      if (settings && typeof settings === 'object') {
+        serverStore.settings = { ...serverStore.settings, ...settings };
+        saveServerStore();
+      }
+      return res.json({
+        success: true,
+        settings: serverStore.settings
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // API 4: Sync requests between Client and Server (Bi-directional merge)
   app.post('/api/requests/sync', async (req, res) => {
     try {
@@ -818,23 +984,7 @@ async function startServer() {
         deletedRequestIds: clientDeletedIds 
       } = req.body;
 
-      if (!serverStore.deletedRequestIds) {
-        serverStore.deletedRequestIds = [];
-      }
-      if (Array.isArray(clientDeletedIds)) {
-        for (const dId of clientDeletedIds) {
-          if (!serverStore.deletedRequestIds.includes(dId)) {
-            serverStore.deletedRequestIds.push(dId);
-          }
-        }
-      }
 
-      // Purge any requests in serverStore that have been deleted
-      if (serverStore.deletedRequestIds.length > 0) {
-        const deletedSet = new Set(serverStore.deletedRequestIds);
-        serverStore.requests = serverStore.requests.filter(r => !deletedSet.has(r.id));
-        serverStore.logs = serverStore.logs.filter(l => !deletedSet.has(l.requestId));
-      }
 
       // Sync users bi-directionally
       if (Array.isArray(clientUsers) && clientUsers.length > 0) {
@@ -922,6 +1072,7 @@ async function startServer() {
         logs: serverStore.logs,
         users: serverStore.users,
         branches: serverStore.branches,
+        settings: serverStore.settings,
         deletedRequestIds: serverStore.deletedRequestIds || [],
         lastWebhookEvent: serverStore.lastWebhookEvent,
         publicAppUrl: getTunnelUrl() || ''

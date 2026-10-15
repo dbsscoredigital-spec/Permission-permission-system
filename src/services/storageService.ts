@@ -36,13 +36,16 @@ export class StorageService {
           if (Array.isArray(data.branches) && data.branches.length > 0) {
             localStorage.setItem(KEYS.BRANCHES, JSON.stringify(data.branches));
           }
-          if (Array.isArray(data.requests) && data.requests.length > 0) {
-            const deletedSet = new Set(this.getDeletedRequestIds());
-            const filtered = data.requests.filter((r: any) => r && r.id && !deletedSet.has(r.id));
+          if (Array.isArray(data.requests)) {
+            const filtered = data.requests.filter((r: any) => r && r.id);
             localStorage.setItem(KEYS.REQUESTS, JSON.stringify(filtered));
           }
-          if (Array.isArray(data.logs) && data.logs.length > 0) {
+          if (Array.isArray(data.logs)) {
             localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+          }
+          if (data.settings && typeof data.settings === 'object') {
+            const current = this.getSettings();
+            localStorage.setItem(KEYS.SETTINGS, JSON.stringify({ ...current, ...data.settings }));
           }
         }
       }
@@ -78,16 +81,16 @@ export class StorageService {
       localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
     }
     if (!localStorage.getItem(KEYS.REQUESTS)) {
-      localStorage.setItem(KEYS.REQUESTS, JSON.stringify(INITIAL_REQUESTS));
+      // Initialize with empty array so live server data / Google Sheets is authoritative
+      localStorage.setItem(KEYS.REQUESTS, JSON.stringify([]));
     }
     if (!localStorage.getItem(KEYS.LOGS)) {
-      localStorage.setItem(KEYS.LOGS, JSON.stringify(INITIAL_APPROVAL_LOGS));
+      localStorage.setItem(KEYS.LOGS, JSON.stringify([]));
     }
     if (!localStorage.getItem(KEYS.SETTINGS)) {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
     }
     if (!localStorage.getItem(KEYS.CURRENT_USER)) {
-      // Default to Somchai (Teacher at ช่างยนต์)
       localStorage.setItem(KEYS.CURRENT_USER, JSON.stringify(INITIAL_USERS[0]));
     }
   }
@@ -343,11 +346,10 @@ export class StorageService {
 
   public getRequests(): ExitRequest[] {
     const data = localStorage.getItem(KEYS.REQUESTS);
-    const list: ExitRequest[] = data ? JSON.parse(data) : INITIAL_REQUESTS;
-    if (!Array.isArray(list)) return INITIAL_REQUESTS;
-    const deletedIds = new Set(this.getDeletedRequestIds());
+    const list: ExitRequest[] = data ? JSON.parse(data) : [];
+    if (!Array.isArray(list)) return [];
     return list
-      .filter(r => r && r.id && !deletedIds.has(r.id))
+      .filter(r => r && r.id)
       .map(r => ({
         ...r,
         id: r.id || `REQ-${Date.now()}`,
@@ -735,6 +737,9 @@ export class StorageService {
     newlyApproved: ExitRequest[];
     allRequests: ExitRequest[];
     allUsers?: User[];
+    allBranches?: Branch[];
+    allLogs?: ApprovalLog[];
+    settings?: SystemSettings;
     lastWebhookEvent?: any;
   }> {
     try {
@@ -800,9 +805,8 @@ export class StorageService {
         }
       }
 
-      // 4. Filter and process requests
-      const currentDeletedSet = new Set(this.getDeletedRequestIds());
-      const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id && !currentDeletedSet.has(r.id));
+      // 4. Accept server requests as authoritative list
+      const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id);
       const newlyApproved: ExitRequest[] = [];
 
       if (serverRequests.length !== localRequests.length) {
@@ -843,10 +847,15 @@ export class StorageService {
         localStorage.setItem('public_tunnel_url', data.publicAppUrl);
       }
 
-      if (Array.isArray(data.logs) && data.logs.length > localLogs.length) {
-        const filteredLogs = data.logs.filter((l: ApprovalLog) => !currentDeletedSet.has(l.requestId));
+      if (Array.isArray(data.logs)) {
+        const filteredLogs = data.logs.filter((l: ApprovalLog) => l && l.requestId);
         localStorage.setItem(KEYS.LOGS, JSON.stringify(filteredLogs));
         hasChanges = true;
+      }
+
+      if (data.settings && typeof data.settings === 'object') {
+        const current = this.getSettings();
+        localStorage.setItem(KEYS.SETTINGS, JSON.stringify({ ...current, ...data.settings }));
       }
 
       return {
@@ -854,6 +863,9 @@ export class StorageService {
         newlyApproved,
         allRequests: serverRequests,
         allUsers: data.users || this.getUsers(),
+        allBranches: data.branches || this.getBranches(),
+        allLogs: this.getLogs(),
+        settings: this.getSettings(),
         lastWebhookEvent: data.lastWebhookEvent
       };
     } catch {
@@ -861,7 +873,11 @@ export class StorageService {
       return {
         changed: false,
         newlyApproved: [],
-        allRequests: this.getRequests()
+        allRequests: this.getRequests(),
+        allUsers: this.getUsers(),
+        allBranches: this.getBranches(),
+        allLogs: this.getLogs(),
+        settings: this.getSettings()
       };
     }
   }

@@ -134,65 +134,45 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className="absolute right-0 mt-2 w-[calc(100vw-32px)] max-w-xs sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-2"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="p-2 border-b border-slate-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                          สลับบทบาททดสอบ (Quick Switch)
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          คลิกเลือกบัญชีเพื่อสลับไปยังมุมมองของคนนั้นทันที
-                        </p>
+                    <div className="p-3 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-xs ${
+                          currentUser.role === 'admin' ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-200' :
+                          currentUser.role === 'approver' ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-200' :
+                          currentUser.role === 'security' ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-200' :
+                          'bg-blue-100 text-blue-700 ring-2 ring-blue-200'
+                        }`}>
+                          {currentUser.role === 'admin' ? <Shield className="w-5 h-5" /> :
+                           currentUser.role === 'approver' ? <Building2 className="w-5 h-5" /> :
+                           currentUser.role === 'security' ? <QrCode className="w-5 h-5" /> :
+                           <UserCheck className="w-5 h-5" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-slate-900 truncate">{currentUser.name}</p>
+                          <p className="text-xs text-slate-500 truncate">{currentUser.position} • {currentUser.branchName}</p>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="max-h-72 overflow-y-auto py-1 space-y-1">
-                      {users.map((u, idx) => {
-                        const isCurrent = currentUser.id === u.id;
-                        return (
-                          <button
-                            key={`nav-user-${u.id}-${idx}`}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUserChange(u);
-                              setUserDropdownOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all cursor-pointer ${
-                              isCurrent
-                                ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold'
-                                : 'hover:bg-slate-50 text-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                                u.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                                u.role === 'approver' ? 'bg-emerald-100 text-emerald-700' :
-                                u.role === 'security' ? 'bg-amber-100 text-amber-700' :
-                                'bg-blue-100 text-blue-700'
-                              }`}>
-                                {u.role === 'admin' ? <Shield className="w-4 h-4" /> :
-                                 u.role === 'approver' ? <Building2 className="w-4 h-4" /> :
-                                 u.role === 'security' ? <QrCode className="w-4 h-4" /> :
-                                 <UserCheck className="w-4 h-4" />}
-                              </div>
-                              <div className="truncate">
-                                <p className="text-xs font-semibold truncate text-slate-900 flex items-center gap-1">
-                                  <span>{u.name}</span>
-                                  {isCurrent && (
-                                    <span className="text-[10px] text-indigo-600 bg-indigo-100 px-1.5 py-0.2 rounded-full font-bold">
-                                      กำลังใช้งาน
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-[11px] text-slate-500 truncate">{u.position} • {u.branchName}</p>
-                              </div>
-                            </div>
-                            <div className="shrink-0 ml-2">
-                              {getRoleBadge(u.role)}
-                            </div>
-                          </button>
-                        );
-                      })}
+                    <div className="p-3 space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-slate-400">บทบาทในระบบ:</span>
+                        <div>{getRoleBadge(currentUser.role)}</div>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-slate-400">ชื่อผู้ใช้งาน:</span>
+                        <span className="font-semibold text-slate-800 font-mono">{currentUser.username}</span>
+                      </div>
+                      {currentUser.lineId && currentUser.lineId.startsWith('U') && !currentUser.lineId.startsWith('U_') ? (
+                        <div className="flex items-center justify-between text-emerald-700 bg-emerald-50 p-2 rounded-xl border border-emerald-200 text-[11px]">
+                          <span>เชื่อมต่อ LINE รับ Flex แล้ว</span>
+                          <span className="font-mono text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded-md font-bold">✓ พร้อมใช้งาน</span>
+                        </div>
+                      ) : null}
+                      <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-100 text-[11px] text-blue-800 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>แผงนี้ล็อกสิทธิ์เฉพาะบัญชีของท่าน ไม่อนุญาตให้กดสลับไปหาผู้อื่น</span>
+                      </div>
                     </div>
 
                     {onLogout && (

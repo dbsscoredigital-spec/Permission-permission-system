@@ -131,14 +131,21 @@ export default function App() {
       try {
         const syncRes = await storage.syncWithServer();
         if (isMounted) {
-          if (Array.isArray(syncRes.allRequests) && syncRes.allRequests.length > 0) {
+          if (Array.isArray(syncRes.allRequests)) {
             setRequests(syncRes.allRequests);
-          } else {
-            setRequests(storage.getRequests());
           }
-          setLogs(storage.getLogs());
-          setUsers(storage.getUsers());
-          setBranches(storage.getBranches());
+          if (Array.isArray(syncRes.allLogs)) {
+            setLogs(syncRes.allLogs);
+          }
+          if (Array.isArray(syncRes.allUsers) && syncRes.allUsers.length > 0) {
+            setUsers(syncRes.allUsers);
+          }
+          if (Array.isArray(syncRes.allBranches) && syncRes.allBranches.length > 0) {
+            setBranches(syncRes.allBranches);
+          }
+          if (syncRes.settings) {
+            setSettings(syncRes.settings);
+          }
 
           if (syncRes.newlyApproved && syncRes.newlyApproved.length > 0) {
             syncRes.newlyApproved.forEach(appr => {

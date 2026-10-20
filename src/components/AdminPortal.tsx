@@ -63,6 +63,7 @@ interface AdminPortalProps {
   onReject?: (requestId: string, reason: string) => void;
   onDeleteRequest?: (requestId: string) => void;
   onBatchDeleteRequests?: (requestIds: string[]) => void;
+  onClearAllRequests?: () => Promise<void> | void;
   onPrintSlip: (req: ExitRequest) => void;
   onViewQrPass: (req: ExitRequest) => void;
   onOpenSheetsModal: () => void;
@@ -82,12 +83,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onReject,
   onDeleteRequest,
   onBatchDeleteRequests,
+  onClearAllRequests,
   onPrintSlip,
   onViewQrPass,
   onOpenSheetsModal
 }) => {
   // Tabs: 'requests' | 'users' | 'branches' | 'logs' | 'settings'
   const [activeTab, setActiveTab] = useState<'requests' | 'users' | 'branches' | 'logs' | 'settings'>('requests');
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+  const [isClearingAll, setIsClearingAll] = useState(false);
 
   // Search & Filter state for Requests
   const [searchTerm, setSearchTerm] = useState('');
@@ -879,11 +883,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               {/* Action Buttons */}
               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                 <button
+                  type="button"
                   onClick={handleExportCSV}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Export Excel (CSV)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowClearAllModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-xs transition-colors"
+                  title="ลบข้อมูลคำขอของทุกคนออกทั้งหมดเพื่อเริ่มใช้งานจริง"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบคำขอทุกคน (เริ่มใช้จริง)</span>
                 </button>
               </div>
             </div>
@@ -3257,6 +3271,75 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <span>{testLineStatus?.loading ? 'กำลังส่งแจ้งเตือน...' : 'ส่งข้อความทดสอบทันที'}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirm Clear All Requests for Real Production Use */}
+      {showClearAllModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-100 text-slate-800 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-xl">
+                <AlertTriangle className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  ลบข้อมูลคำขอทุกคนออกทั้งหมด
+                </h3>
+                <span className="text-xs text-rose-600 font-semibold">
+                  (เตรียมระบบเพื่อเริ่มใช้งานจริง)
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 bg-rose-50/50 p-3.5 rounded-xl border border-rose-100 leading-relaxed">
+              <p className="font-semibold text-rose-900">
+                ⚠️ การกระทำนี้จะล้างข้อมูลคำขอออกทั้งหมด:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-slate-700">
+                <li>ลบรายการคำขอของครูและบุคลากรทุกคนออกจากระบบ</li>
+                <li>ลบแถวคำขอทดสอบทั้งหมดออกจาก Google Sheets อัตโนมัติ</li>
+                <li>ล้างประวัติการอนุมัติ (Audit Log) ทั้งหมด</li>
+                <li><strong>ข้อมูลบัญชีผู้ใช้และสาขาวิชาจะยังคงอยู่ครบถ้วน ไม่ถูกลบ</strong></li>
+              </ul>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              เมื่อกด "ยืนยันลบทั้งหมด" ระบบจะรีเซ็ตคำขอเป็น 0 รายการ เพื่อให้บุคลากรเริ่มยื่นคำขอจริงได้ทันที
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={() => setShowClearAllModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={async () => {
+                  setIsClearingAll(true);
+                  try {
+                    if (onClearAllRequests) {
+                      await onClearAllRequests();
+                    } else {
+                      await StorageService.getInstance().clearAllRequests(currentUser);
+                    }
+                    setShowClearAllModal(false);
+                  } finally {
+                    setIsClearingAll(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md cursor-pointer transition-colors disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isClearingAll ? 'กำลังล้างข้อมูลทั้งหมด...' : 'ยืนยันลบคำขอทั้งหมด'}</span>
+              </button>
             </div>
           </div>
         </div>

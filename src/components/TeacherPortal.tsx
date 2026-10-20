@@ -77,6 +77,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   // Decline Dialog for Substitute
   const [decliningReqId, setDecliningReqId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState<string>('');
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
 
   // List of other teachers available for substitute teaching
   const candidateSubstituteTeachers = users.filter(u => u.id !== currentUser.id && (u.role === 'teacher' || u.role === 'approver'));
@@ -140,8 +141,14 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const approvedRequests = displayRequests.filter(r => r.status === 'approved');
   const rejectedRequests = displayRequests.filter(r => r.status === 'rejected');
 
-  // Substitute requests assigned to current user
-  const substituteRequestsForMe = requests.filter(r => r.substituteTeacherId === currentUser.id);
+  // Substitute requests assigned to current user (matched by ID or Name)
+  const substituteRequestsForMe = requests.filter(r => {
+    if (!r.hasClasses) return false;
+    if (r.substituteTeacherId && r.substituteTeacherId === currentUser.id) return true;
+    if (r.substituteTeacherName && norm(r.substituteTeacherName) === norm(currentUser.name)) return true;
+    if (r.substituteTeacherName && cleanThaiName(r.substituteTeacherName) === cleanThaiName(currentUser.name)) return true;
+    return false;
+  });
   const pendingSubstituteForMe = substituteRequestsForMe.filter(r => r.substituteStatus === 'pending');
 
   const filteredList = displayRequests.filter(r => {
@@ -1168,25 +1175,46 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       {isPendingAck ? (
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                           <button
+                            type="button"
+                            disabled={acknowledgingId === req.id}
                             onClick={() => {
                               setDecliningReqId(req.id);
                               setDeclineReason('');
                             }}
-                            className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all text-center"
+                            className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all text-center disabled:opacity-50"
                           >
                             ไม่สะดวกสอนแทน
                           </button>
                           <button
-                            onClick={() => onAcknowledgeSubstitute(req.id)}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-all text-center"
+                            type="button"
+                            disabled={acknowledgingId === req.id}
+                            onClick={async () => {
+                              setAcknowledgingId(req.id);
+                              try {
+                                await onAcknowledgeSubstitute(req.id);
+                              } finally {
+                                setAcknowledgingId(null);
+                              }
+                            }}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-all text-center disabled:opacity-50"
                           >
                             <CheckSquare className="w-3.5 h-3.5" />
-                            <span>✅ กดรับทราบการสอนแทน</span>
+                            <span>{acknowledgingId === req.id ? 'กำลังบันทึกรับทราบ...' : '✅ กดรับทราบการสอนแทน'}</span>
                           </button>
                         </div>
                       ) : (
-                        <div className="text-xs text-slate-500">
-                          {isAcked ? `รับทราบเมื่อ: ${req.substituteAcknowledgedAt || '-'}` : 'ดำเนินการแล้ว'}
+                        <div className="flex items-center gap-2">
+                          {isAcked ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>✓ ท่านรับทราบเรียบร้อยแล้ว {req.substituteAcknowledgedAt ? `(${req.substituteAcknowledgedAt})` : ''}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                              <span>ท่านแจ้งไม่สะดวกสอนแทน</span>
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

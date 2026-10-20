@@ -585,8 +585,10 @@ async function startServer() {
       }
 
       let storeChanged = false;
+      const deletedSet = new Set(serverStore.deletedRequestIds || []);
 
       for (const [reqId, row] of sheetMap.entries()) {
+        if (deletedSet.has(reqId)) continue;
         const rowStatus = String(row.status || 'pending').toLowerCase().trim();
         const existingIdx = serverStore.requests.findIndex(r => r.id === reqId);
 
@@ -1163,6 +1165,74 @@ async function startServer() {
     }
   });
 
+  // API 4.3: Clear ALL Requests (Admin Reset for Production Use)
+  app.post('/api/requests/clear-all', async (req, res) => {
+    try {
+      const { actorName, actorId } = req.body || {};
+      const currentRequests = [...serverStore.requests];
+      const clearedCount = currentRequests.length;
+
+      // Add all current IDs to deletedRequestIds so no device or sheet re-imports them
+      if (!serverStore.deletedRequestIds) {
+        serverStore.deletedRequestIds = [];
+      }
+      const deletedSet = new Set(serverStore.deletedRequestIds);
+      for (const r of currentRequests) {
+        if (r && r.id) {
+          deletedSet.add(r.id);
+        }
+      }
+      serverStore.deletedRequestIds = Array.from(deletedSet);
+      serverStore.requests = [];
+      serverStore.logs = [];
+
+      saveServerStore();
+
+      // Clean up Google Sheets asynchronously
+      const gasUrl = serverStore.settings.googleAppsScriptUrl;
+      if (gasUrl && gasUrl.startsWith('http')) {
+        (async () => {
+          try {
+            const checkRes = await fetch(`${gasUrl}?action=get_all`, { signal: AbortSignal.timeout(10000) });
+            const checkData = await checkRes.json();
+            if (checkData && Array.isArray(checkData.requests)) {
+              for (const row of checkData.requests) {
+                if (row && row.id) {
+                  try {
+                    await fetch(gasUrl, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'delete_request',
+                        payload: { requestId: row.id, userName: row.userName || '', deletedBy: actorName || 'Admin' }
+                      }),
+                      signal: AbortSignal.timeout(6000)
+                    });
+                  } catch {}
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[clear-all] GAS deletion error:', e);
+          }
+        })();
+      }
+
+      console.log(`[clear-all] Cleared ${clearedCount} requests by ${actorName || 'Admin'}. Total deletedRequestIds: ${serverStore.deletedRequestIds.length}`);
+
+      return res.json({
+        success: true,
+        clearedCount,
+        message: 'ลบข้อมูลคำขอทุกคนออกทั้งหมดเรียบร้อยแล้ว พร้อมเริ่มใช้งานจริง'
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to clear all requests: ' + (err.message || String(err))
+      });
+    }
+  });
+
   // API 5: Direct Request Status Update
   app.post('/api/requests/:id/status', async (req, res) => {
     try {
@@ -1218,6 +1288,68 @@ async function startServer() {
       notifyTeacherApprovalViaLineFlex(updated, status, actorName || 'ผู้อนุมัติ', rejectionReason).catch(e =>
         console.error('Error in notifyTeacherApprovalViaLineFlex:', e)
       );
+
+      return res.json({ success: true, request: updated });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // API 5.1: Update Substitute Teaching Status (Acknowledge / Decline)
+  app.post('/api/requests/:id/substitute', (req, res) => {
+    try {
+      const { id } = req.params;
+      const { substituteStatus, teacherId, teacherName, declineReason, timestamp } = req.body;
+      const thaiTimestamp = timestamp || getThaiTimestamp();
+
+      const idx = serverStore.requests.findIndex(r => r.id === id);
+      let updated: any = null;
+
+      if (idx !== -1) {
+        serverStore.requests[idx].substituteStatus = substituteStatus;
+        if (substituteStatus === 'acknowledged') {
+          serverStore.requests[idx].substituteAcknowledgedAt = thaiTimestamp;
+          delete serverStore.requests[idx].substituteDeclineReason;
+        } else if (substituteStatus === 'declined') {
+          serverStore.requests[idx].substituteDeclineReason = declineReason || 'ไม่สะดวกสอนแทน';
+        }
+        updated = serverStore.requests[idx];
+      } else {
+        const fallback = sanitizeRequest({
+          id,
+          userName: 'ครูผู้ขอ',
+          branchName: 'ช่างกลโรงงาน',
+          status: 'pending',
+          hasClasses: true,
+          substituteTeacherId: teacherId,
+          substituteTeacherName: teacherName,
+          substituteStatus,
+          substituteAcknowledgedAt: substituteStatus === 'acknowledged' ? thaiTimestamp : undefined,
+          substituteDeclineReason: substituteStatus === 'declined' ? declineReason : undefined
+        });
+        serverStore.requests.unshift(fallback);
+        updated = fallback;
+      }
+
+      // Add audit log
+      serverStore.logs.push({
+        id: 'LOG-SUB-' + Date.now(),
+        requestId: id,
+        requestSummary: updated?.destination ? `${updated.userName} ขอออกไป ${updated.destination}` : `คำขอ ${id}`,
+        actorId: teacherId || 'substitute_teacher',
+        actorName: teacherName || 'ครูผู้สอนแทน',
+        actorRole: 'ครูผู้สอนแทน',
+        action: substituteStatus === 'acknowledged' ? 'substitute_ack' : 'substitute_decline',
+        timestamp: thaiTimestamp,
+        comment: substituteStatus === 'acknowledged'
+          ? `ครูผู้สอนแทน (${teacherName || 'ครู'}) กดรับทราบภาระงานสอนแทนเรียบร้อยแล้ว`
+          : `ครูผู้สอนแทน (${teacherName || 'ครู'}) แจ้งไม่สะดวกสอนแทน เหตุผล: ${declineReason || '-'}`
+      });
+
+      saveServerStore();
+
+      // Forward to Google Apps Script
+      forwardToAppsScript('substitute_ack', updated);
 
       return res.json({ success: true, request: updated });
     } catch (err: any) {

@@ -334,8 +334,12 @@ export default function App() {
       await lineService.sendTeacherStatusNotification(newReq, 'approved', `${newReq.userName} (หัวหน้าสาขา - อนุมัติตนเอง)`);
       refreshAllData();
       showToast(`⚡ ยื่นและอนุมัติตัวเองสำเร็จ! หัวหน้าสาขา ${newReq.userName} ได้รับอนุมัติเรียบร้อย พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
+    } else if (newReq.hasClasses && newReq.substituteStatus !== 'acknowledged') {
+      // มีภาระงานสอนแทน: ต้องให้ครูผู้สอนแทนกดรับทราบก่อน จึงค่อยส่ง LINE Flex ให้หัวหน้าสาขา!
+      refreshAllData();
+      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! มีภาระคาบสอน ระบบจะรอให้ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูสอนแทน'}) กดรับทราบในระบบก่อน จึงจะส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา ⏳`, 'info');
     } else {
-      // Always deliver LINE notification to Approver so department head gets alerted immediately!
+      // กรณีไม่มีคาบสอน: ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาทันที
       refreshAllData();
       const lineRes = await lineService.sendApproverNotification(newReq);
       refreshAllData();
@@ -355,22 +359,38 @@ export default function App() {
   // 1.1 Acknowledge Substitute Teaching (In-System Web Action)
   // When acknowledged in web: Triggers LINE Message 1 of 2 to Department Head or Deputy Director!
   const handleAcknowledgeSubstitute = async (requestId: string) => {
+    const now = new Date();
+    const thaiTimestamp = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    // 1. Instant optimistic state update - status changes on screen in 0ms!
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, substituteStatus: 'acknowledged', substituteAcknowledgedAt: thaiTimestamp } : r));
+
+    // 2. Persist to storage & backend server
     const updated = storage.acknowledgeSubstitute(requestId, currentUser);
     if (updated) {
-      // Trigger LINE Message to Approver that substitute teaching is confirmed
-      const lineRes = await lineService.sendApproverNotification(updated);
       refreshAllData();
-      const approverTitle = updated.assignedApproverId === 'usr-admin' ? 'รอง ผอ.ฝ่ายวิชาการ' : 'หัวหน้าสาขา';
-      if (lineRes.success) {
-        showToast(`ครูผู้สอนแทนกดรับทราบแล้ว! ส่ง LINE แจ้งเตือนไปยัง${approverTitle} (${updated.assignedApproverName}) เรียบร้อยแล้ว`, 'success');
-      } else {
-        showToast(`ครูผู้สอนแทนกดรับทราบแล้ว! (ส่งต่อ ${approverTitle})`, 'info');
+      showToast(`✅ รับทราบภาระงานสอนแทนคำขอ ${requestId} เรียบร้อยแล้ว`, 'success');
+
+      // 3. Send LINE notification to approver in background (never blocks UI or reverts status)
+      try {
+        const lineRes = await lineService.sendApproverNotification(updated);
+        refreshAllData();
+        const approverTitle = updated.assignedApproverId === 'usr-admin' ? 'รอง ผอ.ฝ่ายวิชาการ' : 'หัวหน้าสาขา';
+        if (lineRes.success) {
+          showToast(`ส่ง LINE แจ้งเตือนไปยัง${approverTitle} (${updated.assignedApproverName}) เรียบร้อยแล้ว 📲`, 'success');
+        }
+      } catch (lineErr) {
+        console.warn('LINE notification background error:', lineErr);
       }
     }
   };
 
   // 1.2 Decline Substitute Teaching (In-System Web Action)
   const handleDeclineSubstitute = (requestId: string, reason: string) => {
+    // 1. Instant optimistic state update
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, substituteStatus: 'declined', substituteDeclineReason: reason } : r));
+
+    // 2. Persist to storage & backend server
     const updated = storage.declineSubstitute(requestId, currentUser, reason);
     if (updated) {
       refreshAllData();
@@ -458,6 +478,15 @@ export default function App() {
     const count = storage.batchDeleteRequests(requestIds, currentUser);
     refreshAllData();
     showToast(`ลบรายการคำขอที่เลือกเรียบร้อยแล้ว (${count} รายการ)`, 'success');
+  };
+
+  // 5.2 Clear All Requests (Admin Action for Production Real Use)
+  const handleClearAllRequests = async () => {
+    await storage.clearAllRequests(currentUser);
+    setRequests([]);
+    setLogs([]);
+    refreshAllData();
+    showToast('ลบข้อมูลคำขอของทุกคนออกทั้งหมดเรียบร้อยแล้ว พร้อมเริ่มใช้งานจริง 🎉', 'success');
   };
 
   // Reset demo
@@ -587,6 +616,7 @@ export default function App() {
             onSubmitRequest={handleSubmitRequest}
             onViewQrPass={(req) => setQrPassReq(req)}
             onPrintSlip={(req) => setPrintSlipReq(req)}
+            onAcknowledgeSubstitute={handleAcknowledgeSubstitute}
           />
         )}
 
@@ -626,6 +656,7 @@ export default function App() {
             onReject={handleRejectRequest}
             onDeleteRequest={handleDeleteRequest}
             onBatchDeleteRequests={handleBatchDeleteRequests}
+            onClearAllRequests={handleClearAllRequests}
             onPrintSlip={(req) => setPrintSlipReq(req)}
             onViewQrPass={(req) => setQrPassReq(req)}
             onOpenSheetsModal={() => setIsSheetsModalOpen(true)}

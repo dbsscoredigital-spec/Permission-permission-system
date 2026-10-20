@@ -91,6 +91,8 @@ function doPost(e) {
       return handleCreateRequest(payload);
     } else if (action === "update_status") {
       return handleUpdateStatus(payload);
+    } else if (action === "substitute_ack") {
+      return handleSubstituteAck(payload);
     } else if (action === "delete_request") {
       return handleDeleteRequest(payload);
     }
@@ -392,13 +394,40 @@ function handleCreateRequest(req) {
     req.userName,
     "submit",
     new Date(),
-    "ยื่นคำขอใหม่ ระบบส่งต่อไปยัง " + req.assignedApproverName
+    req.hasClasses ? ("ยื่นคำขอใหม่ มีภาระงานสอน รอครูสอนแทน (" + (req.substituteTeacherName || "") + ") รับทราบ") : ("ยื่นคำขอใหม่ ส่งตรงไปยัง " + req.assignedApproverName)
   ]);
 
   // ส่งแจ้งเตือน LINE ไปยังหัวหน้าสาขา
-  sendLineFlexMessageToApprover(req);
+  // เงื่อนไข: หากมีคาบสอน (hasClasses) และครูผู้สอนแทนยังไม่ได้รับทราบ ให้รอครูสอนแทนกดรับทราบในเว็บก่อน ค่อยส่ง LINE ให้หัวหน้าสาขา
+  const hasPendingSubstitute = Boolean(req && req.hasClasses && req.substituteStatus !== "acknowledged");
+  if (!hasPendingSubstitute) {
+    sendLineFlexMessageToApprover(req);
+  }
 
   return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: req.id }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 2. จัดการเมื่อครูผู้สอนแทนกดรับทราบในเว็บ (substitute_ack)
+function handleSubstituteAck(req) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const logSheet = ss.getSheetByName("ApprovalLog");
+
+  if (logSheet) {
+    logSheet.appendRow([
+      "LOG-" + new Date().getTime(),
+      req.id,
+      req.substituteTeacherName || "ครูผู้สอนแทน",
+      "substitute_ack",
+      new Date(),
+      "ครูผู้สอนแทน (" + (req.substituteTeacherName || "") + ") กดรับทราบภาระงานสอนแทนแล้ว ส่ง LINE Flex แจ้งเตือนหัวหน้าสาขา"
+    ]);
+  }
+
+  // ส่ง LINE Flex ข้อความแจ้งเตือนหาหัวหน้าสาขาทันทีเมื่อครูสอนแทนกดรับทราบแล้ว
+  sendLineFlexMessageToApprover(req);
+
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Substitute acknowledged and approver notified" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 

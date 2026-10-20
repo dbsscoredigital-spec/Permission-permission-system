@@ -456,6 +456,31 @@ export class StorageService {
     return deletedCount;
   }
 
+  public async clearAllRequests(actor?: User): Promise<boolean> {
+    const current = this.getRequests();
+    for (const r of current) {
+      if (r && r.id) {
+        this.addDeletedRequestId(r.id);
+      }
+    }
+    this.saveRequests([]);
+    localStorage.setItem(KEYS.LOGS, JSON.stringify([]));
+
+    try {
+      await fetch('/api/requests/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actorId: actor?.id,
+          actorName: actor?.name
+        })
+      });
+    } catch (e) {
+      console.warn('Error clearing server requests:', e);
+    }
+    return true;
+  }
+
   public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'> & { selfApprove?: boolean }): ExitRequest {
     const approver = this.getApproverForBranch(requestData.branchId, requestData.userId);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -544,6 +569,20 @@ export class StorageService {
       comment: `ครูผู้สอนแทน (${teacher.name}) กดรับทราบภาระงานสอนแทนเรียบร้อยแล้ว`
     });
 
+    // Direct push to server backend for instant cross-device synchronization
+    try {
+      fetch(`/api/requests/${encodeURIComponent(requestId)}/substitute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          substituteStatus: 'acknowledged',
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          timestamp: thaiTimestamp
+        })
+      }).catch(() => {});
+    } catch {}
+
     this.syncToAppsScript('substitute_ack', updated);
     return updated;
   }
@@ -572,6 +611,21 @@ export class StorageService {
       comment: `ครูผู้สอนแทน (${teacher.name}) ไม่สะดวกสอนแทน เหตุผล: ${reason}`
     });
 
+    // Direct push to server backend for instant cross-device synchronization
+    try {
+      fetch(`/api/requests/${encodeURIComponent(requestId)}/substitute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          substituteStatus: 'declined',
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          declineReason: reason
+        })
+      }).catch(() => {});
+    } catch {}
+
+    this.syncToAppsScript('substitute_decline', updated);
     return updated;
   }
 

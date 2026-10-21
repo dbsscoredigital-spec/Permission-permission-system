@@ -139,6 +139,17 @@ export default function App() {
           }
           if (Array.isArray(syncRes.allUsers) && syncRes.allUsers.length > 0) {
             setUsers(syncRes.allUsers);
+            const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id);
+            if (refreshedMe && (
+              refreshedMe.name !== currentUser.name ||
+              refreshedMe.username !== currentUser.username ||
+              refreshedMe.branchId !== currentUser.branchId ||
+              refreshedMe.role !== currentUser.role ||
+              refreshedMe.lineId !== currentUser.lineId
+            )) {
+              setCurrentUser(refreshedMe);
+              storage.setCurrentUser(refreshedMe);
+            }
           }
           if (Array.isArray(syncRes.allBranches) && syncRes.allBranches.length > 0) {
             setBranches(syncRes.allBranches);
@@ -489,6 +500,33 @@ export default function App() {
     showToast('ลบข้อมูลคำขอของทุกคนออกทั้งหมดเรียบร้อยแล้ว พร้อมเริ่มใช้งานจริง 🎉', 'success');
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Manual Sync trigger for immediate cross-device update (Mobile & Desktop)
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const syncRes = await storage.syncWithServer();
+      if (Array.isArray(syncRes.allRequests)) setRequests(syncRes.allRequests);
+      if (Array.isArray(syncRes.allLogs)) setLogs(syncRes.allLogs);
+      if (Array.isArray(syncRes.allUsers) && syncRes.allUsers.length > 0) {
+        setUsers(syncRes.allUsers);
+        const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id);
+        if (refreshedMe) {
+          setCurrentUser(refreshedMe);
+          storage.setCurrentUser(refreshedMe);
+        }
+      }
+      if (Array.isArray(syncRes.allBranches) && syncRes.allBranches.length > 0) setBranches(syncRes.allBranches);
+      if (syncRes.settings) setSettings(syncRes.settings);
+      showToast('✓ ซิงค์ข้อมูลล่าสุดเรียบร้อยแล้ว ทุกเครื่องแสดงข้อมูลตรงกัน', 'success');
+    } catch {
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Reset demo
   const handleResetData = () => {
     storage.resetToDefaults();
@@ -565,6 +603,8 @@ export default function App() {
         onOpenSheetsModal={() => setIsSheetsModalOpen(true)}
         onResetData={handleResetData}
         onLogout={handleLogout}
+        onSyncNow={handleManualSync}
+        isSyncing={isSyncing}
       />
 
       {/* GAS Outdated Alert Banner */}

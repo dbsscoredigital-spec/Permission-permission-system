@@ -115,7 +115,7 @@ export class StorageService {
     return deduplicated;
   }
 
-  public saveUsers(users: User[]) {
+  public async saveUsers(users: User[]): Promise<boolean> {
     const seen = new Set<string>();
     const cleaned = users.map((u, i) => {
       let id = u.id;
@@ -127,14 +127,17 @@ export class StorageService {
     });
     localStorage.setItem(KEYS.USERS, JSON.stringify(cleaned));
 
-    // Immediately push users to server backend for cross-device synchronization
+    // Immediately push users to server backend for instant cross-device synchronization
     try {
-      fetch('/api/users', {
+      const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: cleaned })
-      }).catch(() => {});
-    } catch {}
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   // Clear all users with option to keep admin and security
@@ -264,17 +267,20 @@ export class StorageService {
     return data ? JSON.parse(data) : INITIAL_BRANCHES;
   }
 
-  public saveBranches(branches: Branch[]) {
+  public async saveBranches(branches: Branch[]): Promise<boolean> {
     localStorage.setItem(KEYS.BRANCHES, JSON.stringify(branches));
 
-    // Immediately push branches to server backend for cross-device synchronization
+    // Immediately push branches to server backend for instant cross-device synchronization
     try {
-      fetch('/api/branches', {
+      const res = await fetch('/api/branches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ branches })
-      }).catch(() => {});
-    } catch {}
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   // Automatically find approver by branch (department head can self-approve)
@@ -763,8 +769,18 @@ export class StorageService {
     }
   }
 
-  public saveSettings(settings: SystemSettings) {
+  public async saveSettings(settings: SystemSettings): Promise<boolean> {
     localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings })
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   // --- Google Apps Script Sync Simulation ---
@@ -799,8 +815,6 @@ export class StorageService {
     try {
       const localRequests = this.getRequests();
       const localLogs = this.getLogs();
-      const localUsers = this.getUsers();
-      const localBranches = this.getBranches();
       const localSettings = this.getSettings();
       const deletedRequestIds = this.getDeletedRequestIds();
 
@@ -810,8 +824,6 @@ export class StorageService {
         body: JSON.stringify({
           requests: localRequests,
           logs: localLogs,
-          users: localUsers,
-          branches: localBranches,
           deletedRequestIds,
           settings: {
             lineChannelAccessToken: localSettings.lineChannelAccessToken,

@@ -16,7 +16,8 @@ import {
   FileText,
   Lock,
   Users,
-  LogOut
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -31,6 +32,8 @@ interface NavbarProps {
   onOpenSheetsModal: () => void;
   onResetData: () => void;
   onLogout?: () => void;
+  onSyncNow?: () => void;
+  isSyncing?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -44,7 +47,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   logoUrl,
   onOpenSheetsModal,
   onResetData,
-  onLogout
+  onLogout,
+  onSyncNow,
+  isSyncing
 }) => {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
@@ -100,6 +105,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* User Profile & Role Switcher */}
           <div className="flex items-center gap-2">
+            {onSyncNow && (
+              <button
+                type="button"
+                onClick={onSyncNow}
+                disabled={isSyncing}
+                title="กดเพื่อดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์ทันที (Sync Now)"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : 'text-slate-500'}`} />
+                <span className="hidden sm:inline">{isSyncing ? 'กำลังซิงค์...' : 'ซิงค์ข้อมูล'}</span>
+              </button>
+            )}
+
             <div className="relative">
               <button
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}

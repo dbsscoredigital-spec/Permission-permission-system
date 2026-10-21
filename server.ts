@@ -988,44 +988,21 @@ async function startServer() {
 
 
 
-      // Sync users bi-directionally
-      if (Array.isArray(clientUsers) && clientUsers.length > 0) {
-        if (!Array.isArray(serverStore.users) || serverStore.users.length === 0) {
-          serverStore.users = clientUsers;
-        } else {
-          // Merge client users into serverStore.users
-          for (const cUser of clientUsers) {
-            const idx = serverStore.users.findIndex(u => u.id === cUser.id || (u.username && u.username.toLowerCase() === (cUser.username || '').toLowerCase()));
-            if (idx === -1) {
-              serverStore.users.push(cUser);
-            } else {
-              serverStore.users[idx] = { ...serverStore.users[idx], ...cUser };
-            }
-          }
-        }
+      // Server is the master source of truth for users and branches.
+      // Do not allow stale client localStorage from background sync to overwrite updated server users.
+      if ((!Array.isArray(serverStore.users) || serverStore.users.length === 0) && Array.isArray(clientUsers) && clientUsers.length > 0) {
+        serverStore.users = clientUsers;
       }
 
-      // Sync branches bi-directionally
-      if (Array.isArray(clientBranches) && clientBranches.length > 0) {
-        if (!Array.isArray(serverStore.branches) || serverStore.branches.length === 0) {
-          serverStore.branches = clientBranches;
-        } else {
-          for (const cBranch of clientBranches) {
-            const idx = serverStore.branches.findIndex(b => b.id === cBranch.id);
-            if (idx === -1) {
-              serverStore.branches.push(cBranch);
-            } else {
-              serverStore.branches[idx] = { ...serverStore.branches[idx], ...cBranch };
-            }
-          }
-        }
+      if ((!Array.isArray(serverStore.branches) || serverStore.branches.length === 0) && Array.isArray(clientBranches) && clientBranches.length > 0) {
+        serverStore.branches = clientBranches;
       }
 
       if (clientSettings) {
-        if (clientSettings.lineChannelAccessToken && !clientSettings.lineChannelAccessToken.startsWith('MOCK_')) {
+        if (clientSettings.lineChannelAccessToken && !clientSettings.lineChannelAccessToken.startsWith('MOCK_') && (!serverStore.settings.lineChannelAccessToken || serverStore.settings.lineChannelAccessToken.startsWith('MOCK_'))) {
           serverStore.settings.lineChannelAccessToken = clientSettings.lineChannelAccessToken;
         }
-        if (clientSettings.googleAppsScriptUrl) {
+        if (clientSettings.googleAppsScriptUrl && !serverStore.settings.googleAppsScriptUrl) {
           serverStore.settings.googleAppsScriptUrl = clientSettings.googleAppsScriptUrl;
         }
         if (clientSettings.appUrl) {
@@ -1063,8 +1040,8 @@ async function startServer() {
         }
       }
 
-      // Check if any pending request was approved in LINE via Google Apps Script
-      await syncPendingRequestsWithGas();
+      // Trigger GAS sync in background without blocking response latency for mobile devices
+      syncPendingRequestsWithGas().catch(() => {});
 
       saveServerStore();
 

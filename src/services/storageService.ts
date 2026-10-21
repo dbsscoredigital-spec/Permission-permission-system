@@ -77,8 +77,21 @@ export class StorageService {
     if (!localStorage.getItem(KEYS.BRANCHES)) {
       localStorage.setItem(KEYS.BRANCHES, JSON.stringify(INITIAL_BRANCHES));
     }
-    if (!localStorage.getItem(KEYS.USERS)) {
+    const existingUsers = localStorage.getItem(KEYS.USERS);
+    if (!existingUsers) {
       localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
+    } else {
+      try {
+        const parsed = JSON.parse(existingUsers);
+        if (Array.isArray(parsed) && parsed.length < INITIAL_USERS.length) {
+          for (const iu of INITIAL_USERS) {
+            if (!parsed.some((u: any) => u.id === iu.id || (u.username && u.username.toLowerCase() === (iu.username || '').toLowerCase()))) {
+              parsed.push(iu);
+            }
+          }
+          localStorage.setItem(KEYS.USERS, JSON.stringify(parsed));
+        }
+      } catch {}
     }
     if (!localStorage.getItem(KEYS.REQUESTS)) {
       // Initialize with empty array so live server data / Google Sheets is authoritative
@@ -98,7 +111,18 @@ export class StorageService {
   // --- Users ---
   public getUsers(): User[] {
     const data = localStorage.getItem(KEYS.USERS);
-    const raw: User[] = data ? JSON.parse(data) : INITIAL_USERS;
+    let raw: User[] = data ? JSON.parse(data) : INITIAL_USERS;
+
+    // If local cache has fewer users than INITIAL_USERS (e.g. old cached session from GitHub Pages), merge missing ones
+    if (Array.isArray(raw) && raw.length < INITIAL_USERS.length) {
+      for (const iu of INITIAL_USERS) {
+        if (!raw.some(u => u.id === iu.id || (u.username && u.username.toLowerCase() === (iu.username || '').toLowerCase()))) {
+          raw.push(iu);
+        }
+      }
+      localStorage.setItem(KEYS.USERS, JSON.stringify(raw));
+    }
+
     const seen = new Set<string>();
     const deduplicated: User[] = [];
     for (let i = 0; i < raw.length; i++) {

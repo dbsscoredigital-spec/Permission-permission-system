@@ -117,7 +117,31 @@ function doPost(e) {
           setSheet.appendRow([key, String(payloadObj[key] || ""), "Auto-saved from Web App"]);
         }
       }
-      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Settings saved" }))
+    } else if (action === "save_users") {
+      let uSheet = ss.getSheetByName("Users");
+      if (!uSheet) {
+        uSheet = ss.insertSheet("Users");
+        uSheet.appendRow(["UserID", "Username", "Password", "ชื่อ", "สาขา", "Role", "LINE_ID", "Position"]);
+      }
+      const userList = (payload && payload.users) || [];
+      if (Array.isArray(userList) && userList.length > 0) {
+        uSheet.clearContents();
+        uSheet.appendRow(["UserID", "Username", "Password", "ชื่อ", "สาขา", "Role", "LINE_ID", "Position"]);
+        const rows = userList.map(function(u) {
+          return [
+            String(u.id || "").trim(),
+            String(u.username || "").trim(),
+            String(u.password || "").trim(),
+            String(u.name || "").trim(),
+            String(u.branchName || u.branchId || "").trim(),
+            String(u.role || "teacher").trim(),
+            String(u.lineId || "").trim(),
+            String(u.position || "ครูผู้สอน").trim()
+          ];
+        });
+        uSheet.getRange(2, 1, rows.length, 8).setValues(rows);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Users saved" }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -139,6 +163,32 @@ function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reqSheet = ss.getSheetByName("Requests");
   const data = reqSheet.getDataRange().getValues();
+
+  // 0. ดึงรายชื่อผู้ใช้เดี่ยวๆ
+  if (action === "get_users") {
+    var userList = [];
+    var uSheet = ss.getSheetByName("Users");
+    if (uSheet && uSheet.getLastRow() > 1) {
+      var uData = uSheet.getDataRange().getValues();
+      for (var u = 1; u < uData.length; u++) {
+        var uRow = uData[u];
+        if (!uRow[0] && !uRow[1]) continue;
+        userList.push({
+          id: String(uRow[0] || "").trim(),
+          username: String(uRow[1] || "").trim(),
+          password: String(uRow[2] || "").trim(),
+          name: String(uRow[3] || "").trim(),
+          branchName: String(uRow[4] || "").trim(),
+          branchId: String(uRow[4] || "").trim(),
+          role: String(uRow[5] || "teacher").trim(),
+          lineId: String(uRow[6] || "").trim(),
+          position: String(uRow[7] || "ครูผู้สอน").trim()
+        });
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ found: true, users: userList }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 
   // 1. ดึงรายการคำขอทั้งหมด (สำหรับ Sync กับ Web App)
   if (action === "get_all" || action === "sync") {
@@ -177,7 +227,29 @@ function doGet(e) {
       }
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ found: true, requests: list, settings: settingsObj }))
+    // Also read users from Users sheet if exists
+    var userList = [];
+    var uSheet = ss.getSheetByName("Users");
+    if (uSheet && uSheet.getLastRow() > 1) {
+      var uData = uSheet.getDataRange().getValues();
+      for (var u = 1; u < uData.length; u++) {
+        var uRow = uData[u];
+        if (!uRow[0] && !uRow[1]) continue;
+        userList.push({
+          id: String(uRow[0] || "").trim(),
+          username: String(uRow[1] || "").trim(),
+          password: String(uRow[2] || "").trim(),
+          name: String(uRow[3] || "").trim(),
+          branchName: String(uRow[4] || "").trim(),
+          branchId: String(uRow[4] || "").trim(),
+          role: String(uRow[5] || "teacher").trim(),
+          lineId: String(uRow[6] || "").trim(),
+          position: String(uRow[7] || "ครูผู้สอน").trim()
+        });
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ found: true, requests: list, settings: settingsObj, users: userList }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 

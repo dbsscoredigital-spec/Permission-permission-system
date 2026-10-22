@@ -170,14 +170,8 @@ function loadServerStore(): ServerStore {
       const deletedIds = Array.isArray(parsed.deletedRequestIds) ? parsed.deletedRequestIds : [];
       const deletedSet = new Set(deletedIds);
 
-      // Load users and ensure seed users exist
+      // Load users from persistent store
       const existingUsers = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...INITIAL_USERS];
-      // Check if any INITIAL_USERS are missing in existingUsers (e.g. newly added seed users)
-      for (const iu of INITIAL_USERS) {
-        if (!existingUsers.some((eu: any) => eu.id === iu.id || (eu.username && eu.username.toLowerCase() === iu.username.toLowerCase()))) {
-          existingUsers.push(iu);
-        }
-      }
 
       const existingBranches = Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : [...INITIAL_BRANCHES];
       for (const ib of INITIAL_BRANCHES) {
@@ -704,6 +698,17 @@ async function startServer() {
         }
       }
 
+      if (Array.isArray(gasRes.users) && gasRes.users.length > 0) {
+        serverStore.users = gasRes.users;
+        storeChanged = true;
+        syncInitialDataUsers(gasRes.users);
+      }
+
+      if (gasRes.settings && typeof gasRes.settings === 'object') {
+        serverStore.settings = { ...serverStore.settings, ...gasRes.settings };
+        storeChanged = true;
+      }
+
       if (storeChanged) {
         saveServerStore();
       }
@@ -918,12 +923,40 @@ async function startServer() {
     });
   });
 
+  function syncInitialDataUsers(users: any[]) {
+    try {
+      const initPath = path.join(__dirname, 'src/data/initialData.ts');
+      if (!fs.existsSync(initPath)) return;
+      const content = fs.readFileSync(initPath, 'utf-8');
+      const updated = content.replace(
+        /export const INITIAL_USERS: User\[\] = \[[\s\S]*?\];(?:\r?\n)?/,
+        `export const INITIAL_USERS: User[] = ${JSON.stringify(users, null, 2)};\n`
+      );
+      if (updated !== content) {
+        fs.writeFileSync(initPath, updated, 'utf-8');
+      }
+    } catch (err) {
+      console.warn('[syncInitialDataUsers] Could not sync initialData.ts:', err);
+    }
+  }
+
   app.post('/api/users', (req, res) => {
     try {
       const { users } = req.body;
       if (Array.isArray(users) && users.length > 0) {
         serverStore.users = users;
         saveServerStore();
+        syncInitialDataUsers(users);
+
+        // Forward to Google Apps Script so Google Sheets has updated user credentials
+        const gasUrl = serverStore.settings.googleAppsScriptUrl;
+        if (gasUrl && gasUrl.startsWith('http')) {
+          fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save_users', payload: { users } })
+          }).catch(() => {});
+        }
       }
       return res.json({
         success: true,

@@ -53,6 +53,7 @@ export class StorageService {
   }
 
   public async fetchServerUsers(): Promise<User[]> {
+    // 1. Try Express backend server
     try {
       const res = await fetch('/api/users');
       if (res.ok) {
@@ -63,6 +64,23 @@ export class StorageService {
         }
       }
     } catch {}
+
+    // 2. Try Google Apps Script cloud fallback (for GitHub Pages static deployments)
+    const settings = this.getSettings();
+    const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+    if (gasUrl && gasUrl.startsWith('http')) {
+      try {
+        const gasRes = await fetch(`${gasUrl}?action=get_all`, { signal: AbortSignal.timeout(6000) });
+        if (gasRes.ok) {
+          const gasData = await gasRes.json();
+          if (gasData && Array.isArray(gasData.users) && gasData.users.length > 0) {
+            localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
+            return gasData.users;
+          }
+        }
+      } catch {}
+    }
+
     return this.getUsers();
   }
 
@@ -80,18 +98,6 @@ export class StorageService {
     const existingUsers = localStorage.getItem(KEYS.USERS);
     if (!existingUsers) {
       localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
-    } else {
-      try {
-        const parsed = JSON.parse(existingUsers);
-        if (Array.isArray(parsed) && parsed.length < INITIAL_USERS.length) {
-          for (const iu of INITIAL_USERS) {
-            if (!parsed.some((u: any) => u.id === iu.id || (u.username && u.username.toLowerCase() === (iu.username || '').toLowerCase()))) {
-              parsed.push(iu);
-            }
-          }
-          localStorage.setItem(KEYS.USERS, JSON.stringify(parsed));
-        }
-      } catch {}
     }
     if (!localStorage.getItem(KEYS.REQUESTS)) {
       // Initialize with empty array so live server data / Google Sheets is authoritative
@@ -111,57 +117,55 @@ export class StorageService {
   // --- Users ---
   public getUsers(): User[] {
     const data = localStorage.getItem(KEYS.USERS);
-    let raw: User[] = data ? JSON.parse(data) : INITIAL_USERS;
-
-    // If local cache has fewer users than INITIAL_USERS (e.g. old cached session from GitHub Pages), merge missing ones
-    if (Array.isArray(raw) && raw.length < INITIAL_USERS.length) {
-      for (const iu of INITIAL_USERS) {
-        if (!raw.some(u => u.id === iu.id || (u.username && u.username.toLowerCase() === (iu.username || '').toLowerCase()))) {
-          raw.push(iu);
-        }
+    if (!data) return INITIAL_USERS;
+    try {
+      const parsed: User[] = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
       }
-      localStorage.setItem(KEYS.USERS, JSON.stringify(raw));
-    }
-
-    const seen = new Set<string>();
-    const deduplicated: User[] = [];
-    for (let i = 0; i < raw.length; i++) {
-      const u = raw[i];
-      if (!u.id || seen.has(u.id)) {
-        const uniqueUser = { ...u, id: `${u.id || 'usr'}-${i}` };
-        seen.add(uniqueUser.id);
-        deduplicated.push(uniqueUser);
-      } else {
-        seen.add(u.id);
-        deduplicated.push(u);
-      }
-    }
-    return deduplicated;
+    } catch {}
+    return INITIAL_USERS;
   }
 
   public async saveUsers(users: User[]): Promise<boolean> {
     const seen = new Set<string>();
     const cleaned = users.map((u, i) => {
-      let id = u.id;
-      if (!id || seen.has(id)) {
-        id = `${id || 'usr'}-${Date.now()}-${i}`;
+      let id = u.id ? String(u.id).trim() : `usr-${Date.now()}-${i}`;
+      if (seen.has(id)) {
+        id = `${id}-${i}`;
       }
       seen.add(id);
       return { ...u, id };
     });
     localStorage.setItem(KEYS.USERS, JSON.stringify(cleaned));
 
-    // Immediately push users to server backend for instant cross-device synchronization
+    // 1. Immediately push users to Express server backend
     try {
-      const res = await fetch('/api/users', {
+      fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: cleaned })
-      });
-      return res.ok;
-    } catch {
-      return false;
+      }).catch(() => {});
+    } catch {}
+
+    // 2. Also forward to Google Apps Script (Cloud DB for Google Sheets & GitHub Pages)
+    const settings = this.getSettings();
+    const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+    if (gasUrl && gasUrl.startsWith('http')) {
+      try {
+        fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          mode: 'no-cors',
+          body: JSON.stringify({
+            action: 'save_users',
+            payload: { users: cleaned }
+          })
+        }).catch(() => {});
+      } catch {}
     }
+
+    return true;
   }
 
   // Clear all users with option to keep admin and security
@@ -890,6 +894,9 @@ export class StorageService {
               if (gasData && Array.isArray(gasData.requests)) {
                 const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
                 this.saveRequests(gasRequests);
+                if (Array.isArray(gasData.users) && gasData.users.length > 0) {
+                  localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
+                }
                 if (gasData.settings && typeof gasData.settings === 'object') {
                   const currentSettings = this.getSettings();
                   const mergedSettings = { ...currentSettings, ...gasData.settings };
@@ -899,7 +906,7 @@ export class StorageService {
                   changed: true,
                   newlyApproved: [],
                   allRequests: gasRequests,
-                  allUsers: this.getUsers(),
+                  allUsers: (Array.isArray(gasData.users) && gasData.users.length > 0) ? gasData.users : this.getUsers(),
                   allBranches: this.getBranches(),
                   allLogs: this.getLogs(),
                   settings: this.getSettings()
@@ -1020,6 +1027,9 @@ export class StorageService {
             if (gasData && Array.isArray(gasData.requests)) {
               const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
               this.saveRequests(gasRequests);
+              if (Array.isArray(gasData.users) && gasData.users.length > 0) {
+                localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
+              }
               if (gasData.settings && typeof gasData.settings === 'object') {
                 const mergedSettings = { ...localSettings, ...gasData.settings };
                 localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
@@ -1028,7 +1038,7 @@ export class StorageService {
                 changed: true,
                 newlyApproved: [],
                 allRequests: gasRequests,
-                allUsers: this.getUsers(),
+                allUsers: (Array.isArray(gasData.users) && gasData.users.length > 0) ? gasData.users : this.getUsers(),
                 allBranches: this.getBranches(),
                 allLogs: this.getLogs(),
                 settings: this.getSettings()

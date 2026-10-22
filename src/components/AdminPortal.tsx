@@ -490,16 +490,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     if (!newUser.name || !newUser.username) return;
 
     const branch = branches.find(b => b.id === newUser.branchId);
+    const customId = (newUser.id || '').trim();
     const fullUser: User = {
-      id: `usr-${Date.now().toString().slice(-6)}`,
-      username: newUser.username!,
-      password: newUser.password || 'password123',
-      name: newUser.name!,
+      id: customId || `usr-${Date.now().toString().slice(-6)}`,
+      username: newUser.username!.trim(),
+      password: (newUser.password || '1234').trim(),
+      name: newUser.name!.trim(),
       role: newUser.role as any,
       branchId: newUser.branchId || 'GEN',
       branchName: branch ? branch.name : 'ครูสามัญ',
-      position: newUser.position || 'ครู',
-      lineId: newUser.lineId || `U_${newUser.username?.toUpperCase()}`
+      position: (newUser.position || 'ครู').trim(),
+      lineId: (newUser.lineId || `U_${newUser.username?.toUpperCase()}`).trim()
     };
 
     onUpdateUsers([fullUser, ...users]);
@@ -538,7 +539,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       lineId: (editFormData.lineId || '-').trim()
     };
 
-    const updatedUsers = users.map(u => u.id === updatedUser.id ? updatedUser : u);
+    const updatedUsers = users.map(u => (editingUser && u.id === editingUser.id) ? updatedUser : u);
     onUpdateUsers(updatedUsers);
 
     // If role is approver, sync with branch approver
@@ -1682,6 +1683,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                         <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-[11px] space-y-0.5">
                           <div className="flex justify-between">
+                            <span className="text-slate-400">User ID:</span>
+                            <span className="font-mono text-slate-700 font-semibold">{u.id}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">รหัสผ่าน:</span>
+                            <span className="font-mono text-purple-700 font-semibold">{u.password || '1234'}</span>
+                          </div>
+                          <div className="flex justify-between">
                             <span className="text-slate-400">สังกัดสาขา:</span>
                             <span className="font-semibold text-slate-800">{u.branchName}</span>
                           </div>
@@ -1733,7 +1742,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                       <tr>
                         <th className="px-4 py-3">ผู้ใช้งาน</th>
-                        <th className="px-4 py-3">Username / Password</th>
+                        <th className="px-4 py-3">Username / รหัสผ่าน</th>
                         <th className="px-4 py-3">สาขาวิชา / ตำแหน่ง</th>
                         <th className="px-4 py-3">บทบาท (Role)</th>
                         <th className="px-4 py-3">LINE ID</th>
@@ -1762,13 +1771,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 </div>
                                 <div>
                                   <strong className="text-slate-900 block text-xs">{u.name}</strong>
-                                  <span className="text-[10px] text-slate-400 font-mono">{u.id}</span>
+                                  <span className="text-[10px] text-slate-500 font-mono">ID: {u.id}</span>
                                 </div>
                               </div>
                             </td>
                             <td className="px-4 py-3 font-mono">
                               <span className="text-purple-700 font-semibold">{u.username}</span>
-                              <span className="text-slate-400 block text-[10px]">••••••••</span>
+                              <span className="text-slate-500 block text-[10px] font-mono">รหัส: {u.password || '1234'}</span>
                             </td>
                             <td className="px-4 py-3">
                               <span className="font-semibold text-slate-800 block">{u.branchName}</span>
@@ -2508,25 +2517,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  User ID (รหัสผู้ใช้ - เว้นว่างได้เพื่อสร้างอัตโนมัติ)
+                </label>
+                <input
+                  type="text"
+                  value={newUser.id || ''}
+                  onChange={(e) => setNewUser({ ...newUser, id: e.target.value.trim() })}
+                  placeholder="เช่น usr-001 หรือ 64661 (เว้นว่างเพื่อสร้างให้อัตโนมัติ)"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-slate-800"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Username</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Username (ชื่อล็อกอิน) <span className="text-rose-500">*</span></label>
                   <input
                     type="text"
                     required
                     value={newUser.username}
-                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value.trim() })}
                     placeholder="ekachai"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Password</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Password (รหัสผ่าน)</label>
                   <input
-                    type="password"
-                    value={newUser.password}
-                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                    type="text"
+                    value={newUser.password || ''}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value.trim() })}
+                    placeholder="1234"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
                   />
                 </div>
               </div>
@@ -2909,16 +2932,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Username (ชื่อผู้ใช้สำหรับเข้าสู่ระบบ)
+                    User ID (รหัสผู้ใช้) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.id}
+                    onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.trim() })}
+                    placeholder="เช่น usr-001 หรือ 64661"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-slate-800 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Username (ชื่อผู้ใช้ล็อกอิน) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={editFormData.username}
-                    onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value.trim() })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-slate-800 bg-white"
                   />
                 </div>
@@ -2929,8 +2965,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <input
                     type="text"
                     value={editFormData.password || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
-                    placeholder="password123"
+                    onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value.trim() })}
+                    placeholder="1234"
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-slate-800 bg-white"
                   />
                 </div>

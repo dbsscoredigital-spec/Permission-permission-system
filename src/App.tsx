@@ -139,10 +139,12 @@ export default function App() {
           }
           if (Array.isArray(syncRes.allUsers) && syncRes.allUsers.length > 0) {
             setUsers(syncRes.allUsers);
-            const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id);
+            const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id || (u.username && u.username === currentUser.username));
             if (refreshedMe && (
+              refreshedMe.id !== currentUser.id ||
               refreshedMe.name !== currentUser.name ||
               refreshedMe.username !== currentUser.username ||
+              refreshedMe.password !== currentUser.password ||
               refreshedMe.branchId !== currentUser.branchId ||
               refreshedMe.role !== currentUser.role ||
               refreshedMe.lineId !== currentUser.lineId
@@ -511,7 +513,7 @@ export default function App() {
       if (Array.isArray(syncRes.allLogs)) setLogs(syncRes.allLogs);
       if (Array.isArray(syncRes.allUsers) && syncRes.allUsers.length > 0) {
         setUsers(syncRes.allUsers);
-        const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id);
+        const refreshedMe = syncRes.allUsers.find(u => u.id === currentUser.id || (u.username && u.username === currentUser.username));
         if (refreshedMe) {
           setCurrentUser(refreshedMe);
           storage.setCurrentUser(refreshedMe);

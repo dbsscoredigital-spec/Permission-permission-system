@@ -21,8 +21,8 @@ interface LoginScreenProps {
 export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess }) => {
   const storage = StorageService.getInstance();
   const settings = storage.getSettings();
-  const logoUrl = settings?.logoUrl;
-  const schoolName = settings?.schoolName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์';
+  const [logoUrl, setLogoUrl] = useState(settings?.logoUrl || '');
+  const [schoolName, setSchoolName] = useState(settings?.schoolName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์');
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -32,7 +32,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
   const [isLoading, setIsLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Load remembered credentials on mount
+  // Load remembered credentials on mount and sync latest settings/logo from server
   useEffect(() => {
     const creds = storage.getRememberedCredentials();
     if (creds && creds.rememberMe) {
@@ -40,7 +40,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
       setPassword(creds.password || '');
       setRememberMe(true);
     }
-    // Also proactively fetch latest users from server so any newly added/edited accounts can log in immediately
+    // Proactively fetch latest settings (logo, school name) and users on mount so login screen shows updated logo & credentials immediately
+    storage.syncWithServer().then(res => {
+      if (res.settings) {
+        if (res.settings.logoUrl) setLogoUrl(res.settings.logoUrl);
+        if (res.settings.schoolName) setSchoolName(res.settings.schoolName);
+      }
+    }).catch(() => {});
     storage.fetchServerUsers().catch(() => {});
   }, []);
 

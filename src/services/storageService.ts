@@ -795,16 +795,35 @@ export class StorageService {
 
   public async saveSettings(settings: SystemSettings): Promise<boolean> {
     localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+    // 1. Send to Express server backend
     try {
-      const res = await fetch('/api/settings', {
+      fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings })
-      });
-      return res.ok;
-    } catch {
-      return false;
+      }).catch(() => {});
+    } catch {}
+
+    // 2. Also forward to Google Apps Script so GitHub Pages static clients can read settings via Google Sheets!
+    const gasUrl = settings.googleAppsScriptUrl || this.getSettings().googleAppsScriptUrl;
+    if (gasUrl && gasUrl.startsWith('http')) {
+      try {
+        fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          mode: 'no-cors',
+          body: JSON.stringify({
+            action: 'save_settings',
+            payload: {
+              logoUrl: settings.logoUrl || '',
+              schoolName: settings.schoolName || '',
+              collegeCode: settings.collegeCode || ''
+            }
+          })
+        }).catch(() => {});
+      } catch {}
     }
+    return true;
   }
 
   // --- Google Apps Script Sync Simulation ---
@@ -850,6 +869,8 @@ export class StorageService {
           logs: localLogs,
           deletedRequestIds,
           settings: {
+            logoUrl: localSettings.logoUrl,
+            schoolName: localSettings.schoolName,
             lineChannelAccessToken: localSettings.lineChannelAccessToken,
             googleAppsScriptUrl: localSettings.googleAppsScriptUrl,
             appUrl: localSettings.appUrl
@@ -858,6 +879,35 @@ export class StorageService {
       });
 
       if (!res.ok) {
+        // Fallback for static hosting (such as GitHub Pages) where /api/requests/sync returns 404:
+        // Sync directly with Google Apps Script so all mobile phones & computers share live data!
+        const gasUrl = localSettings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+        if (gasUrl && gasUrl.startsWith('http')) {
+          try {
+            const gasRes = await fetch(`${gasUrl}?action=get_all`, { signal: AbortSignal.timeout(8000) });
+            if (gasRes.ok) {
+              const gasData = await gasRes.json();
+              if (gasData && Array.isArray(gasData.requests)) {
+                const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
+                this.saveRequests(gasRequests);
+                if (gasData.settings && typeof gasData.settings === 'object') {
+                  const currentSettings = this.getSettings();
+                  const mergedSettings = { ...currentSettings, ...gasData.settings };
+                  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
+                }
+                return {
+                  changed: true,
+                  newlyApproved: [],
+                  allRequests: gasRequests,
+                  allUsers: this.getUsers(),
+                  allBranches: this.getBranches(),
+                  allLogs: this.getLogs(),
+                  settings: this.getSettings()
+                };
+              }
+            }
+          } catch {}
+        }
         return { changed: false, newlyApproved: [], allRequests: localRequests };
       }
 
@@ -959,7 +1009,34 @@ export class StorageService {
         lastWebhookEvent: data.lastWebhookEvent
       };
     } catch {
-      // Offline or network error, silently return local state
+      // Offline or static hosting error, try Google Apps Script direct sync as fallback
+      const localSettings = this.getSettings();
+      const gasUrl = localSettings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+      if (gasUrl && gasUrl.startsWith('http')) {
+        try {
+          const gasRes = await fetch(`${gasUrl}?action=get_all`, { signal: AbortSignal.timeout(8000) });
+          if (gasRes.ok) {
+            const gasData = await gasRes.json();
+            if (gasData && Array.isArray(gasData.requests)) {
+              const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
+              this.saveRequests(gasRequests);
+              if (gasData.settings && typeof gasData.settings === 'object') {
+                const mergedSettings = { ...localSettings, ...gasData.settings };
+                localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
+              }
+              return {
+                changed: true,
+                newlyApproved: [],
+                allRequests: gasRequests,
+                allUsers: this.getUsers(),
+                allBranches: this.getBranches(),
+                allLogs: this.getLogs(),
+                settings: this.getSettings()
+              };
+            }
+          }
+        } catch {}
+      }
       return {
         changed: false,
         newlyApproved: [],

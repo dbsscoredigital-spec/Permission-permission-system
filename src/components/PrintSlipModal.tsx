@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { ExitRequest } from '../types';
-import { DonBoscoLogo } from './DonBoscoLogo';
+import { DonBoscoLogo, normalizeLogoUrl } from './DonBoscoLogo';
 import { X, Printer, Download, CheckCircle, Loader2 } from 'lucide-react';
 
 interface PrintSlipModalProps {
@@ -63,8 +63,8 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 18px;">
           <div style="width: 72px; height: 72px; margin: 0 auto 8px auto;">
-            ${logoUrl ? `
-              <img src="${logoUrl}" alt="ตราสถาบัน" style="width: 100%; height: 100%; object-fit: contain; display: block; margin: 0 auto;" />
+            ${normalizeLogoUrl(logoUrl) ? `
+              <img src="${normalizeLogoUrl(logoUrl)}" alt="ตราสถาบัน" style="width: 100%; height: 100%; object-fit: contain; display: block; margin: 0 auto;" />
             ` : `
             <svg viewBox="0 0 400 400" style="width: 100%; height: 100%; display: block;" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="200" cy="200" r="192" fill="#ffffff" />

@@ -59,6 +59,8 @@ interface ServerStore {
     lineChannelAccessToken?: string;
     googleAppsScriptUrl?: string;
     appUrl?: string;
+    logoUrl?: string;
+    schoolName?: string;
   };
   lastWebhookEvent?: {
     timestamp: string;
@@ -551,13 +553,13 @@ async function startServer() {
     if (!gasUrl || !gasUrl.startsWith('http') || isSyncingAllGas) return;
 
     const now = Date.now();
-    if (now - lastAllGasSyncTime < 2500) return;
+    if (now - lastAllGasSyncTime < 8000) return;
     lastAllGasSyncTime = now;
 
     isSyncingAllGas = true;
     try {
       const checkUrl = `${gasUrl}?action=get_all`;
-      const response = await fetch(checkUrl, { signal: AbortSignal.timeout(15000) });
+      const response = await fetch(checkUrl, { signal: AbortSignal.timeout(20000) });
       if (!response.ok) {
         console.warn(`[syncAllFromGoogleAppsScript] GAS responded with HTTP ${response.status}`);
         return;
@@ -705,8 +707,14 @@ async function startServer() {
       if (storeChanged) {
         saveServerStore();
       }
-    } catch (err) {
-      console.error('Error in syncAllFromGoogleAppsScript:', err);
+    } catch (err: any) {
+      if (err?.name === 'TimeoutError' || err?.code === 'ETIMEDOUT' || String(err).includes('timeout')) {
+        console.warn('[syncAllFromGoogleAppsScript] Google Apps Script sync timed out (waiting for next cycle)');
+        // Back off by 15 seconds to give GAS time to recover
+        lastAllGasSyncTime = Date.now() + 15000;
+      } else {
+        console.warn('[syncAllFromGoogleAppsScript] Notice:', err?.message || String(err));
+      }
     } finally {
       isSyncingAllGas = false;
     }
@@ -716,8 +724,8 @@ async function startServer() {
     await syncAllFromGoogleAppsScript();
   };
 
-  // Run full GAS sync in background every 4 seconds so all devices stay identical
-  setInterval(syncAllFromGoogleAppsScript, 4000);
+  // Run full GAS sync in background periodically (20s) so devices stay identical without overloading GAS
+  setInterval(syncAllFromGoogleAppsScript, 20000);
   // Initial sync immediately on startup
   syncAllFromGoogleAppsScript().catch(() => {});
 
@@ -886,7 +894,7 @@ async function startServer() {
   // API 3: Get All Requests from server store
   app.get('/api/requests', async (_req, res) => {
     // Opportunistically run gas sync if needed
-    if (Date.now() - lastAllGasSyncTime > 4000) {
+    if (Date.now() - lastAllGasSyncTime > 15000) {
       syncAllFromGoogleAppsScript().catch(() => {});
     }
     res.json({
@@ -982,9 +990,10 @@ async function startServer() {
         logs: clientLogs, 
         users: clientUsers,
         branches: clientBranches,
-        settings: clientSettings, 
+        settings: clientSettingsRaw, 
         deletedRequestIds: clientDeletedIds 
       } = req.body;
+      const clientSettings = clientSettingsRaw as any;
 
 
 
@@ -999,6 +1008,12 @@ async function startServer() {
       }
 
       if (clientSettings) {
+        if (clientSettings.logoUrl && !serverStore.settings.logoUrl) {
+          serverStore.settings.logoUrl = clientSettings.logoUrl;
+        }
+        if (clientSettings.schoolName && !serverStore.settings.schoolName) {
+          serverStore.settings.schoolName = clientSettings.schoolName;
+        }
         if (clientSettings.lineChannelAccessToken && !clientSettings.lineChannelAccessToken.startsWith('MOCK_') && (!serverStore.settings.lineChannelAccessToken || serverStore.settings.lineChannelAccessToken.startsWith('MOCK_'))) {
           serverStore.settings.lineChannelAccessToken = clientSettings.lineChannelAccessToken;
         }

@@ -1,4 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+export function normalizeLogoUrl(url?: string): string {
+  if (!url) return '';
+  let u = url.trim();
+
+  // If it's a GitHub link: https://github.com/user/repo/blob/branch/path.png
+  // convert to direct raw image: https://raw.githubusercontent.com/user/repo/branch/path.png
+  if (u.includes('github.com')) {
+    if (u.includes('/blob/')) {
+      u = u.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+    } else if (u.includes('/raw/')) {
+      u = u.replace('github.com', 'raw.githubusercontent.com').replace('/raw/', '/');
+    }
+    u = u.replace(/\?raw=true$/, '');
+  }
+
+  // If it's a relative path on GitHub Pages or custom base path
+  if (u.startsWith('./') || (u.startsWith('/') && !u.startsWith('//') && !u.startsWith('/api'))) {
+    const base = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
+    const cleanBase = base.endsWith('/') ? base : base + '/';
+    const cleanPath = u.replace(/^\.?\//, '');
+    u = cleanBase + cleanPath;
+  }
+
+  return u;
+}
 
 interface DonBoscoLogoProps {
   className?: string;
@@ -8,14 +34,20 @@ interface DonBoscoLogoProps {
 
 export const DonBoscoLogo: React.FC<DonBoscoLogoProps> = ({ className = "w-12 h-12", size = 120, logoUrl }) => {
   const [imageError, setImageError] = useState(false);
+  const normalizedUrl = normalizeLogoUrl(logoUrl);
 
-  if (logoUrl && !imageError) {
+  useEffect(() => {
+    setImageError(false);
+  }, [normalizedUrl]);
+
+  if (normalizedUrl && !imageError) {
     return (
       <img
-        src={logoUrl}
+        src={normalizedUrl}
         alt="ตราสัญลักษณ์วิทยาลัย"
         className={`${className} object-contain rounded-full`}
         style={{ width: size, height: size }}
+        crossOrigin="anonymous"
         referrerPolicy="no-referrer"
         onError={() => setImageError(true)}
       />

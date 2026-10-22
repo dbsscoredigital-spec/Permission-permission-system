@@ -2057,11 +2057,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <input
                       type="url"
                       value={localSettings.logoUrl || ''}
-                      onChange={(e) => setLocalSettings({ ...localSettings, logoUrl: e.target.value.trim() })}
-                      placeholder="วางลิงก์รูปภาพ เช่น https://example.com/logo.png หรือ data:image/..."
+                      onChange={(e) => {
+                        let val = e.target.value.trim();
+                        if (val.includes('github.com')) {
+                          if (val.includes('/blob/')) {
+                            val = val.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+                          } else if (val.includes('/raw/')) {
+                            val = val.replace('github.com', 'raw.githubusercontent.com').replace('/raw/', '/');
+                          }
+                          val = val.replace(/\?raw=true$/, '');
+                        }
+                        setLocalSettings({ ...localSettings, logoUrl: val });
+                      }}
+                      placeholder="วางลิงก์รูปภาพ เช่น https://raw.githubusercontent.com/... หรือ ลิงก์ GitHub ใดๆ"
                       className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:outline-hidden font-mono"
                     />
                   </div>
+                  {localSettings.logoUrl?.includes('raw.githubusercontent.com') && (
+                    <div className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <span>✓ แปลงลิงก์ GitHub เป็นไฟล์ภาพตรง (Raw Image) เรียบร้อยแล้ว แสดงผลได้ทุกอุปกรณ์</span>
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer shadow-2xs transition-all">

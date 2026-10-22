@@ -95,6 +95,30 @@ function doPost(e) {
       return handleSubstituteAck(payload);
     } else if (action === "delete_request") {
       return handleDeleteRequest(payload);
+    } else if (action === "save_settings") {
+      let setSheet = ss.getSheetByName("Settings");
+      if (!setSheet) {
+        setSheet = ss.insertSheet("Settings");
+        setSheet.appendRow(["ConfigKey", "ConfigValue", "Description"]);
+      }
+      const sData = setSheet.getDataRange().getValues();
+      const payloadObj = payload || {};
+      for (const key of Object.keys(payloadObj)) {
+        let foundRow = -1;
+        for (let s = 1; s < sData.length; s++) {
+          if (String(sData[s][0] || "").trim() === key) {
+            foundRow = s + 1;
+            break;
+          }
+        }
+        if (foundRow > 0) {
+          setSheet.getRange(foundRow, 2).setValue(String(payloadObj[key] || ""));
+        } else {
+          setSheet.appendRow([key, String(payloadObj[key] || ""), "Auto-saved from Web App"]);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Settings saved" }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
     return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Processed" }))
@@ -140,7 +164,20 @@ function doGet(e) {
         qrToken: row[14]
       });
     }
-    return ContentService.createTextOutput(JSON.stringify({ found: true, requests: list }))
+
+    // Also read settings from Settings sheet if exists
+    var settingsObj = {};
+    var setSheet = ss.getSheetByName("Settings");
+    if (setSheet) {
+      var sData = setSheet.getDataRange().getValues();
+      for (var s = 1; s < sData.length; s++) {
+        var k = String(sData[s][0] || "").trim();
+        var v = String(sData[s][1] || "").trim();
+        if (k) settingsObj[k] = v;
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ found: true, requests: list, settings: settingsObj }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 

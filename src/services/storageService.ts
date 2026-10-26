@@ -37,7 +37,7 @@ export class StorageService {
             localStorage.setItem(KEYS.BRANCHES, JSON.stringify(data.branches));
           }
           if (Array.isArray(data.requests)) {
-            const filtered = data.requests.filter((r: any) => r && r.id);
+            const filtered = data.requests.filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'));
             localStorage.setItem(KEYS.REQUESTS, JSON.stringify(filtered));
           }
           if (Array.isArray(data.logs)) {
@@ -76,6 +76,29 @@ export class StorageService {
           if (gasData && Array.isArray(gasData.users) && gasData.users.length > 0) {
             localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
             return gasData.users;
+          }
+          if (gasData && Array.isArray(gasData.requests)) {
+            const sysRow = gasData.requests.find((r: any) => r && r.id === '__SYS_USERS_SYNC__');
+            if (sysRow && sysRow.reason && sysRow.reason.startsWith('[')) {
+              try {
+                const compact = JSON.parse(sysRow.reason);
+                if (Array.isArray(compact) && compact.length > 0) {
+                  const fullUsers: User[] = compact.map((c: any) => ({
+                    id: c.id,
+                    username: c.u,
+                    password: c.p,
+                    name: c.n,
+                    role: c.r || 'teacher',
+                    branchId: c.b || 'GEN',
+                    branchName: c.bn || 'ครูสามัญ',
+                    position: c.pos || 'ครูผู้สอน',
+                    lineId: c.l || ''
+                  }));
+                  localStorage.setItem(KEYS.USERS, JSON.stringify(fullUsers));
+                  return fullUsers;
+                }
+              } catch {}
+            }
           }
         }
       } catch {}
@@ -127,6 +150,72 @@ export class StorageService {
     return INITIAL_USERS;
   }
 
+  public async pushSystemSyncPacketToGas(users?: User[], settings?: SystemSettings): Promise<void> {
+    const curSettings = settings || this.getSettings();
+    const gasUrl = curSettings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+    if (!gasUrl || !gasUrl.startsWith('http')) return;
+
+    const curUsers = users || this.getUsers();
+    const compactUsers = curUsers.map(u => ({
+      id: String(u.id || '').trim(),
+      u: String(u.username || '').trim(),
+      p: String(u.password || '').trim(),
+      n: String(u.name || '').trim(),
+      r: String(u.role || 'teacher').trim(),
+      b: String(u.branchId || 'GEN').trim(),
+      bn: String(u.branchName || 'ครูสามัญ').trim(),
+      pos: String(u.position || 'ครูผู้สอน').trim(),
+      l: String(u.lineId || '').trim()
+    }));
+
+    const safeLogo = (curSettings.logoUrl && curSettings.logoUrl.startsWith('data:image'))
+      ? '/logo.png'
+      : (curSettings.logoUrl || '/logo.png');
+
+    const destMeta = JSON.stringify({
+      logoUrl: safeLogo,
+      schoolName: curSettings.schoolName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+      collegeCode: curSettings.collegeCode || 'DONBOSCO-SURAT-2026',
+      updatedAt: Date.now()
+    });
+
+    try {
+      // 1. Delete previous sync packet
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'delete_request',
+          payload: { requestId: '__SYS_USERS_SYNC__' }
+        })
+      }).catch(() => {});
+
+      // 2. Append updated sync packet (Works with BOTH old and new Google Apps Script deployments!)
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'create_request',
+          payload: {
+            id: '__SYS_USERS_SYNC__',
+            userName: 'SYSTEM_SYNC',
+            branchName: 'SYSTEM',
+            exitDate: '2099-01-01',
+            exitTime: '00:00',
+            returnTime: '00:00',
+            destination: destMeta,
+            reason: JSON.stringify(compactUsers),
+            assignedApproverName: 'SYSTEM',
+            status: 'system_sync',
+            notes: 'SYSTEM_SYNC_V2'
+          }
+        })
+      }).catch(() => {});
+    } catch {}
+  }
+
   public async saveUsers(users: User[]): Promise<boolean> {
     const seen = new Set<string>();
     const cleaned = users.map((u, i) => {
@@ -148,7 +237,7 @@ export class StorageService {
       }).catch(() => {});
     } catch {}
 
-    // 2. Also forward to Google Apps Script (Cloud DB for Google Sheets & GitHub Pages)
+    // 2. Also forward to Google Apps Script native save_users
     const settings = this.getSettings();
     const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
     if (gasUrl && gasUrl.startsWith('http')) {
@@ -164,6 +253,9 @@ export class StorageService {
         }).catch(() => {});
       } catch {}
     }
+
+    // 3. Push __SYS_USERS_SYNC__ packet to Google Sheets so ALL mobile & desktop devices get it instantly
+    this.pushSystemSyncPacketToGas(cleaned, settings).catch(() => {});
 
     return true;
   }
@@ -797,6 +889,41 @@ export class StorageService {
     }
   }
 
+  private parseSysPacketFromRequests(requests: any[]): { users: User[] | null; settings: Partial<SystemSettings> | null } {
+    let users: User[] | null = null;
+    let settings: Partial<SystemSettings> | null = null;
+    const sysRow = requests.find((r: any) => r && r.id === '__SYS_USERS_SYNC__');
+    if (sysRow) {
+      if (sysRow.reason && sysRow.reason.startsWith('[')) {
+        try {
+          const compact = JSON.parse(sysRow.reason);
+          if (Array.isArray(compact) && compact.length > 0) {
+            users = compact.map((c: any) => ({
+              id: c.id,
+              username: c.u,
+              password: c.p,
+              name: c.n,
+              role: c.r || 'teacher',
+              branchId: c.b || 'GEN',
+              branchName: c.bn || 'ครูสามัญ',
+              position: c.pos || 'ครูผู้สอน',
+              lineId: c.l || ''
+            }));
+          }
+        } catch {}
+      }
+      if (sysRow.destination && sysRow.destination.startsWith('{')) {
+        try {
+          const meta = JSON.parse(sysRow.destination);
+          if (meta && typeof meta === 'object') {
+            settings = meta;
+          }
+        } catch {}
+      }
+    }
+    return { users, settings };
+  }
+
   public async saveSettings(settings: SystemSettings): Promise<boolean> {
     localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
     // 1. Send to Express server backend
@@ -827,6 +954,9 @@ export class StorageService {
         }).catch(() => {});
       } catch {}
     }
+
+    // 3. Push system sync packet to Google Apps Script so all devices receive the updated logo and settings
+    this.pushSystemSyncPacketToGas(this.getUsers(), settings);
     return true;
   }
 
@@ -892,24 +1022,37 @@ export class StorageService {
             if (gasRes.ok) {
               const gasData = await gasRes.json();
               if (gasData && Array.isArray(gasData.requests)) {
-                const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
+                const { users: sysUsers, settings: sysSettings } = this.parseSysPacketFromRequests(gasData.requests);
+                const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'));
                 this.saveRequests(gasRequests);
+
+                let updatedUsers = this.getUsers();
                 if (Array.isArray(gasData.users) && gasData.users.length > 0) {
                   localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
+                  updatedUsers = gasData.users;
+                } else if (sysUsers && sysUsers.length > 0) {
+                  localStorage.setItem(KEYS.USERS, JSON.stringify(sysUsers));
+                  updatedUsers = sysUsers;
                 }
+
+                let currentSettings = this.getSettings();
                 if (gasData.settings && typeof gasData.settings === 'object') {
-                  const currentSettings = this.getSettings();
-                  const mergedSettings = { ...currentSettings, ...gasData.settings };
-                  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
+                  currentSettings = { ...currentSettings, ...gasData.settings };
+                  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(currentSettings));
                 }
+                if (sysSettings) {
+                  currentSettings = { ...currentSettings, ...sysSettings };
+                  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(currentSettings));
+                }
+
                 return {
                   changed: true,
                   newlyApproved: [],
                   allRequests: gasRequests,
-                  allUsers: (Array.isArray(gasData.users) && gasData.users.length > 0) ? gasData.users : this.getUsers(),
+                  allUsers: updatedUsers,
                   allBranches: this.getBranches(),
                   allLogs: this.getLogs(),
-                  settings: this.getSettings()
+                  settings: currentSettings
                 };
               }
             }
@@ -952,8 +1095,8 @@ export class StorageService {
         }
       }
 
-      // 4. Accept server requests as authoritative list
-      const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id);
+      // 4. Accept server requests as authoritative list (filter out __SYS_ packets)
+      const serverRequests: ExitRequest[] = data.requests.filter((r: ExitRequest) => r && r.id && !String(r.id).startsWith('__SYS_'));
       const newlyApproved: ExitRequest[] = [];
 
       if (serverRequests.length !== localRequests.length) {
@@ -1025,23 +1168,37 @@ export class StorageService {
           if (gasRes.ok) {
             const gasData = await gasRes.json();
             if (gasData && Array.isArray(gasData.requests)) {
-              const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id);
+              const { users: sysUsers, settings: sysSettings } = this.parseSysPacketFromRequests(gasData.requests);
+              const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'));
               this.saveRequests(gasRequests);
+
+              let updatedUsers = this.getUsers();
               if (Array.isArray(gasData.users) && gasData.users.length > 0) {
                 localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
+                updatedUsers = gasData.users;
+              } else if (sysUsers && sysUsers.length > 0) {
+                localStorage.setItem(KEYS.USERS, JSON.stringify(sysUsers));
+                updatedUsers = sysUsers;
               }
+
+              let mergedSettings = { ...localSettings };
               if (gasData.settings && typeof gasData.settings === 'object') {
-                const mergedSettings = { ...localSettings, ...gasData.settings };
+                mergedSettings = { ...mergedSettings, ...gasData.settings };
                 localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
               }
+              if (sysSettings) {
+                mergedSettings = { ...mergedSettings, ...sysSettings };
+                localStorage.setItem(KEYS.SETTINGS, JSON.stringify(mergedSettings));
+              }
+
               return {
                 changed: true,
                 newlyApproved: [],
                 allRequests: gasRequests,
-                allUsers: (Array.isArray(gasData.users) && gasData.users.length > 0) ? gasData.users : this.getUsers(),
+                allUsers: updatedUsers,
                 allBranches: this.getBranches(),
                 allLogs: this.getLogs(),
-                settings: this.getSettings()
+                settings: mergedSettings
               };
             }
           }

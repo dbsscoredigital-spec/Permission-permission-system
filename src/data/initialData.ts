@@ -414,7 +414,7 @@ export const INITIAL_APPROVAL_LOGS: ApprovalLog[] = [];
 export const INITIAL_SETTINGS: SystemSettings = {
   schoolName: "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์",
   collegeCode: "DONBOSCO-SURAT-2026",
-  logoUrl: "",
+  logoUrl: "/logo.png",
   appUrl: "",
   lineChannelAccessToken: "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=",
   lineChannelSecret: "c827361fae4981bc923a",

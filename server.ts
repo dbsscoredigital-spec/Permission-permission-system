@@ -61,6 +61,7 @@ interface ServerStore {
     appUrl?: string;
     logoUrl?: string;
     schoolName?: string;
+    collegeCode?: string;
   };
   lastWebhookEvent?: {
     timestamp: string;
@@ -75,6 +76,7 @@ interface ServerStore {
 
 function sanitizeRequest(req: any) {
   if (!req || typeof req !== 'object') return null;
+  if (req.id && String(req.id).startsWith('__SYS_')) return null;
   return {
     ...req,
     id: req.id || `REQ-${Date.now()}`,
@@ -581,9 +583,49 @@ async function startServer() {
       }
 
       let storeChanged = false;
+
+      // 1. Check for system sync packet in Google Sheets
+      const sysSyncRow = sheetMap.get('__SYS_USERS_SYNC__');
+      if (sysSyncRow) {
+        try {
+          if (sysSyncRow.reason && sysSyncRow.reason.startsWith('[')) {
+            const parsedCompact = JSON.parse(sysSyncRow.reason);
+            if (Array.isArray(parsedCompact) && parsedCompact.length > 0) {
+              const fullUsers = parsedCompact.map((c: any) => ({
+                id: c.id,
+                username: c.u,
+                password: c.p,
+                name: c.n,
+                role: c.r || 'teacher',
+                branchId: c.b || 'GEN',
+                branchName: c.bn || 'ครูสามัญ',
+                position: c.pos || 'ครูผู้สอน',
+                lineId: c.l || ''
+              }));
+              serverStore.users = fullUsers;
+              storeChanged = true;
+              syncInitialDataUsers(fullUsers);
+            }
+          }
+          if (sysSyncRow.destination && sysSyncRow.destination.startsWith('{')) {
+            const parsedMeta = JSON.parse(sysSyncRow.destination);
+            if (parsedMeta && typeof parsedMeta === 'object') {
+              if (parsedMeta.logoUrl) serverStore.settings.logoUrl = parsedMeta.logoUrl;
+              if (parsedMeta.schoolName) serverStore.settings.schoolName = parsedMeta.schoolName;
+              if (parsedMeta.collegeCode) serverStore.settings.collegeCode = parsedMeta.collegeCode;
+              storeChanged = true;
+              syncInitialDataSettings(serverStore.settings);
+            }
+          }
+        } catch (e) {
+          console.warn('[syncAllFromGoogleAppsScript] Error parsing __SYS_USERS_SYNC__:', e);
+        }
+      }
+
       const deletedSet = new Set(serverStore.deletedRequestIds || []);
 
       for (const [reqId, row] of sheetMap.entries()) {
+        if (reqId.startsWith('__SYS_') || reqId.startsWith('__TEST_')) continue;
         if (deletedSet.has(reqId)) continue;
         const rowStatus = String(row.status || 'pending').toLowerCase().trim();
         const existingIdx = serverStore.requests.findIndex(r => r.id === reqId);
@@ -940,6 +982,91 @@ async function startServer() {
     }
   }
 
+  function syncInitialDataSettings(settings: any) {
+    try {
+      const initPath = path.join(__dirname, 'src/data/initialData.ts');
+      if (!fs.existsSync(initPath)) return;
+      const content = fs.readFileSync(initPath, 'utf-8');
+      const safeSettings = { ...settings };
+      if (safeSettings.logoUrl && safeSettings.logoUrl.startsWith('data:image')) {
+        safeSettings.logoUrl = '/logo.png';
+      }
+      const updated = content.replace(
+        /export const INITIAL_SETTINGS: SystemSettings = {[\s\S]*?};(?:\r?\n)?/,
+        `export const INITIAL_SETTINGS: SystemSettings = ${JSON.stringify(safeSettings, null, 2)};\n`
+      );
+      if (updated !== content) {
+        fs.writeFileSync(initPath, updated, 'utf-8');
+      }
+    } catch (err) {
+      console.warn('[syncInitialDataSettings] Could not sync initialData.ts:', err);
+    }
+  }
+
+  const pushSystemSyncPacketToGas = async (usersList?: any[], settingsObj?: any) => {
+    const gasUrl = serverStore.settings.googleAppsScriptUrl;
+    if (!gasUrl || !gasUrl.startsWith('http')) return;
+    const currentUsers = usersList || serverStore.users || [];
+    const currentSettings = settingsObj || serverStore.settings || {};
+
+    const compactUsers = currentUsers.map((u: any) => ({
+      id: String(u.id || '').trim(),
+      u: String(u.username || '').trim(),
+      p: String(u.password || '').trim(),
+      n: String(u.name || '').trim(),
+      r: String(u.role || 'teacher').trim(),
+      b: String(u.branchId || 'GEN').trim(),
+      bn: String(u.branchName || 'ครูสามัญ').trim(),
+      pos: String(u.position || 'ครูผู้สอน').trim(),
+      l: String(u.lineId || '').trim()
+    }));
+
+    const safeLogo = (currentSettings.logoUrl && currentSettings.logoUrl.startsWith('data:image'))
+      ? '/logo.png'
+      : (currentSettings.logoUrl || '/logo.png');
+
+    const destMeta = JSON.stringify({
+      logoUrl: safeLogo,
+      schoolName: currentSettings.schoolName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+      collegeCode: currentSettings.collegeCode || 'DONBOSCO-SURAT-2026',
+      updatedAt: Date.now()
+    });
+
+    try {
+      // 1. Delete previous sync packet
+      await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_request',
+          payload: { requestId: '__SYS_USERS_SYNC__' }
+        })
+      });
+
+      // 2. Insert fresh sync packet
+      await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_request',
+          payload: {
+            id: '__SYS_USERS_SYNC__',
+            userName: 'SYSTEM_SYNC',
+            branchName: 'SYSTEM',
+            exitDate: '2099-01-01',
+            exitTime: '00:00',
+            returnTime: '00:00',
+            destination: destMeta,
+            reason: JSON.stringify(compactUsers),
+            assignedApproverName: 'SYSTEM',
+            status: 'system_sync',
+            notes: 'SYSTEM_SYNC_V2'
+          }
+        })
+      });
+    } catch {}
+  };
+
   app.post('/api/users', (req, res) => {
     try {
       const { users } = req.body;
@@ -948,7 +1075,7 @@ async function startServer() {
         saveServerStore();
         syncInitialDataUsers(users);
 
-        // Forward to Google Apps Script so Google Sheets has updated user credentials
+        // 1. Forward to Google Apps Script native save_users
         const gasUrl = serverStore.settings.googleAppsScriptUrl;
         if (gasUrl && gasUrl.startsWith('http')) {
           fetch(gasUrl, {
@@ -957,6 +1084,9 @@ async function startServer() {
             body: JSON.stringify({ action: 'save_users', payload: { users } })
           }).catch(() => {});
         }
+
+        // 2. Also push __SYS_USERS_SYNC__ packet to Google Sheets so ALL mobile & desktop devices get it instantly
+        pushSystemSyncPacketToGas(users, serverStore.settings).catch(() => {});
       }
       return res.json({
         success: true,
@@ -1005,6 +1135,10 @@ async function startServer() {
       if (settings && typeof settings === 'object') {
         serverStore.settings = { ...serverStore.settings, ...settings };
         saveServerStore();
+        syncInitialDataSettings(serverStore.settings);
+
+        // Push to Google Sheets so every device (mobile & computer) receives updated settings/logo
+        pushSystemSyncPacketToGas(serverStore.users, serverStore.settings).catch(() => {});
       }
       return res.json({
         success: true,
@@ -1041,20 +1175,28 @@ async function startServer() {
       }
 
       if (clientSettings) {
-        if (clientSettings.logoUrl && !serverStore.settings.logoUrl) {
+        let settingsChanged = false;
+        if (clientSettings.logoUrl && clientSettings.logoUrl !== serverStore.settings.logoUrl) {
           serverStore.settings.logoUrl = clientSettings.logoUrl;
+          settingsChanged = true;
         }
-        if (clientSettings.schoolName && !serverStore.settings.schoolName) {
+        if (clientSettings.schoolName && clientSettings.schoolName !== serverStore.settings.schoolName) {
           serverStore.settings.schoolName = clientSettings.schoolName;
+          settingsChanged = true;
         }
         if (clientSettings.lineChannelAccessToken && !clientSettings.lineChannelAccessToken.startsWith('MOCK_') && (!serverStore.settings.lineChannelAccessToken || serverStore.settings.lineChannelAccessToken.startsWith('MOCK_'))) {
           serverStore.settings.lineChannelAccessToken = clientSettings.lineChannelAccessToken;
+          settingsChanged = true;
         }
         if (clientSettings.googleAppsScriptUrl && !serverStore.settings.googleAppsScriptUrl) {
           serverStore.settings.googleAppsScriptUrl = clientSettings.googleAppsScriptUrl;
+          settingsChanged = true;
         }
         if (clientSettings.appUrl) {
           serverStore.settings.appUrl = clientSettings.appUrl;
+        }
+        if (settingsChanged) {
+          syncInitialDataSettings(serverStore.settings);
         }
       }
 

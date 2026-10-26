@@ -113,6 +113,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [localSettings, setLocalSettings] = useState<SystemSettings>(settings);
   const [settingsSavedAlert, setSettingsSavedAlert] = useState(false);
 
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
   // New User Modal State
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUser, setNewUser] = useState<Partial<User>>({
@@ -2118,7 +2124,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => setLocalSettings({ ...localSettings, logoUrl: '' })}
+                      onClick={() => setLocalSettings({ ...localSettings, logoUrl: '/logo.png' })}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-600 border border-slate-300 cursor-pointer shadow-2xs"
                     >
                       <RefreshCw className="w-3 h-3 text-slate-400" />

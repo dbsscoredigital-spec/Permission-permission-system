@@ -987,7 +987,19 @@ async function startServer() {
       const initPath = path.join(__dirname, 'src/data/initialData.ts');
       if (!fs.existsSync(initPath)) return;
       const content = fs.readFileSync(initPath, 'utf-8');
-      const safeSettings = { ...settings };
+      const defaultSettings = {
+        schoolName: "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์",
+        collegeCode: "DONBOSCO-SURAT-2026",
+        logoUrl: "/logo.png",
+        appUrl: "",
+        lineChannelAccessToken: "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=",
+        lineChannelSecret: "c827361fae4981bc923a",
+        googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec",
+        enableLineNotifications: true,
+        autoSyncWithGoogleSheet: true,
+        securityContact: "ห้องควบคุมความปลอดภัย ประตู 1 (โทร 02-999-8888 ต่อ 101)"
+      };
+      const safeSettings = { ...defaultSettings, ...settings };
       if (safeSettings.logoUrl && safeSettings.logoUrl.startsWith('data:image')) {
         safeSettings.logoUrl = '/logo.png';
       }

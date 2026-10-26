@@ -10,9 +10,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "GEN",
     "branchName": "ครูสามัญ",
     "position": "ครู",
-    "lineId": "U0b1a90a74dacb8fbb2be07d19189932c",
-    "phone": "081-xxx-xxxx",
-    "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U0b1a90a74dacb8fbb2be07d19189932c"
   },
   {
     "id": "usr-import-64661",
@@ -23,9 +21,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
     "position": "ครูผู้สอน",
-    "phone": "081-xxx-xxxx",
-    "lineId": "U9474d32fb566bbfafc743b4511d46f9d",
-    "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U9474d32fb566bbfafc743b4511d46f9d"
   },
   {
     "id": "usr-import-64662",
@@ -36,9 +32,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
     "position": "ครูผู้สอน",
-    "phone": "081-xxx-xxxx",
-    "lineId": "Ucd11f927fb0627c5608f49d0e202ceaa",
-    "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80"
+    "lineId": "Ucd11f927fb0627c5608f49d0e202ceaa"
   },
   {
     "id": "usr-import-64663",
@@ -49,9 +43,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
     "position": "ครูผู้สอน",
-    "phone": "081-xxx-xxxx",
-    "lineId": "U9db6d7c3b5ba1c5edc4fdb395950bb01",
-    "avatar": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U9db6d7c3b5ba1c5edc4fdb395950bb01"
   },
   {
     "id": "usr-import-64664",
@@ -62,9 +54,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
     "position": "ครูผู้สอน",
-    "phone": "081-xxx-xxxx",
-    "lineId": "U_LINE_64664",
-    "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U_LINE_64664"
   },
   {
     "id": "usr-import-64665",
@@ -75,9 +65,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
     "position": "หัวหน้าสาขาช่างกลโรงงาน",
-    "phone": "081-xxx-xxxx",
-    "lineId": "U759b2ec7a4eee7f1c4565b9a7a8194e2",
-    "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U759b2ec7a4eee7f1c4565b9a7a8194e2"
   },
   {
     "id": "usr-admin",
@@ -88,9 +76,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "DB",
     "branchName": "ธุรกิจดิจิทัล",
     "position": "ผู้ดูแลระบบ / รองผู้อำนวยการ",
-    "phone": "081-999-0000",
-    "lineId": "U_ADMIN_CENTRAL",
-    "avatar": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U_ADMIN_CENTRAL"
   },
   {
     "id": "usr-security",
@@ -101,9 +87,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "GEN",
     "branchName": "ฝ่ายอาคารสถานที่",
     "position": "เจ้าหน้าที่ รปภ. / ตรวจสอบประตู",
-    "phone": "083-111-2233",
-    "lineId": "U_SECURITY_GATE",
-    "avatar": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U_SECURITY_GATE"
   },
   {
     "id": "usr-import-68031",
@@ -356,9 +340,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "GEN",
     "branchName": "ครูสามัญ",
     "position": "ครู",
-    "phone": "081-xxx-xxxx",
-    "lineId": "U6ff07b616d038bc78b1a6602cb0a4120",
-    "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80"
+    "lineId": "U6ff07b616d038bc78b1a6602cb0a4120"
   }
 ];
 

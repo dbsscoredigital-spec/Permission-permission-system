@@ -2,15 +2,15 @@ import { User, Branch, ExitRequest, ApprovalLog, SystemSettings, RequestStatus }
 import { INITIAL_USERS, INITIAL_BRANCHES, INITIAL_REQUESTS, INITIAL_APPROVAL_LOGS, INITIAL_SETTINGS } from '../data/initialData';
 
 const KEYS = {
-  USERS: 'exit_app_users_v2',
-  BRANCHES: 'exit_app_branches_v2',
-  REQUESTS: 'exit_app_requests_v3',
-  LOGS: 'exit_app_logs_v2',
-  SETTINGS: 'exit_app_settings_v2',
-  CURRENT_USER: 'exit_app_current_user_v2',
-  IS_LOGGED_IN: 'exit_app_is_logged_in_v2',
-  REMEMBERED_CREDS: 'exit_app_remembered_creds_v2',
-  DELETED_REQUEST_IDS: 'exit_app_deleted_request_ids_v2'
+  USERS: 'exit_app_users_v4',
+  BRANCHES: 'exit_app_branches_v4',
+  REQUESTS: 'exit_app_requests_v4',
+  LOGS: 'exit_app_logs_v4',
+  SETTINGS: 'exit_app_settings_v4',
+  CURRENT_USER: 'exit_app_current_user_v4',
+  IS_LOGGED_IN: 'exit_app_is_logged_in_v4',
+  REMEMBERED_CREDS: 'exit_app_remembered_creds_v4',
+  DELETED_REQUEST_IDS: 'exit_app_deleted_request_ids_v4'
 };
 
 export class StorageService {
@@ -121,16 +121,47 @@ export class StorageService {
     const existingUsers = localStorage.getItem(KEYS.USERS);
     if (!existingUsers) {
       localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
+    } else {
+      try {
+        const parsed = JSON.parse(existingUsers);
+        if (!Array.isArray(parsed) || parsed.length < 10 || parsed.some(x => x.id === 'u-1' || x.name === 'ครูผู้ขอ')) {
+          localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
+        }
+      } catch {
+        localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
+      }
     }
     if (!localStorage.getItem(KEYS.REQUESTS)) {
-      // Initialize with empty array so live server data / Google Sheets is authoritative
       localStorage.setItem(KEYS.REQUESTS, JSON.stringify([]));
     }
     if (!localStorage.getItem(KEYS.LOGS)) {
       localStorage.setItem(KEYS.LOGS, JSON.stringify([]));
     }
-    if (!localStorage.getItem(KEYS.SETTINGS)) {
+    const existingSettings = localStorage.getItem(KEYS.SETTINGS);
+    if (!existingSettings) {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    } else {
+      try {
+        const s = JSON.parse(existingSettings);
+        if (
+          !s.googleAppsScriptUrl || 
+          !s.googleAppsScriptUrl.startsWith('https://script.google.com/macros/s/') || 
+          s.googleAppsScriptUrl.includes('...') ||
+          !s.lineChannelAccessToken ||
+          s.lineChannelAccessToken.includes('MOCK_') ||
+          s.lineChannelAccessToken.includes('DEMO')
+        ) {
+          localStorage.setItem(KEYS.SETTINGS, JSON.stringify({
+            ...INITIAL_SETTINGS,
+            ...s,
+            googleAppsScriptUrl: INITIAL_SETTINGS.googleAppsScriptUrl,
+            lineChannelAccessToken: INITIAL_SETTINGS.lineChannelAccessToken,
+            logoUrl: (s.logoUrl && !s.logoUrl.startsWith('data:image')) ? s.logoUrl : INITIAL_SETTINGS.logoUrl
+          }));
+        }
+      } catch {
+        localStorage.setItem(KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+      }
     }
     if (!localStorage.getItem(KEYS.CURRENT_USER)) {
       localStorage.setItem(KEYS.CURRENT_USER, JSON.stringify(INITIAL_USERS[0]));
@@ -143,10 +174,11 @@ export class StorageService {
     if (!data) return INITIAL_USERS;
     try {
       const parsed: User[] = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed) && parsed.length >= 10 && !parsed.some(x => x.id === 'u-1' || x.name === 'ครูผู้ขอ')) {
         return parsed;
       }
     } catch {}
+    localStorage.setItem(KEYS.USERS, JSON.stringify(INITIAL_USERS));
     return INITIAL_USERS;
   }
 
@@ -302,7 +334,15 @@ export class StorageService {
 
   public getCurrentUser(): User {
     const data = localStorage.getItem(KEYS.CURRENT_USER);
-    return data ? JSON.parse(data) : INITIAL_USERS[0];
+    if (data) {
+      try {
+        const u = JSON.parse(data);
+        if (u && u.id && u.id !== 'u-1' && u.name !== 'ครูผู้ขอ') {
+          return u;
+        }
+      } catch {}
+    }
+    return INITIAL_USERS[0];
   }
 
   public setCurrentUser(user: User) {
@@ -876,15 +916,39 @@ export class StorageService {
   // --- Settings ---
   public getSettings(): SystemSettings {
     const data = localStorage.getItem(KEYS.SETTINGS);
-    if (!data) return INITIAL_SETTINGS;
+    if (!data) {
+      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+      return INITIAL_SETTINGS;
+    }
     try {
       const parsed: SystemSettings = JSON.parse(data);
+      let changed = false;
       if (!parsed.schoolName || parsed.schoolName.includes('พณิชยการ')) {
         parsed.schoolName = INITIAL_SETTINGS.schoolName;
-        this.saveSettings(parsed);
+        changed = true;
+      }
+      if (!parsed.googleAppsScriptUrl || !parsed.googleAppsScriptUrl.startsWith('https://script.google.com/macros/s/') || parsed.googleAppsScriptUrl.includes('...')) {
+        parsed.googleAppsScriptUrl = INITIAL_SETTINGS.googleAppsScriptUrl;
+        changed = true;
+      }
+      if (!parsed.lineChannelAccessToken || parsed.lineChannelAccessToken.includes('MOCK_') || parsed.lineChannelAccessToken.includes('DEMO') || parsed.lineChannelAccessToken.length < 50) {
+        parsed.lineChannelAccessToken = INITIAL_SETTINGS.lineChannelAccessToken;
+        changed = true;
+      }
+      if (!parsed.logoUrl || parsed.logoUrl.startsWith('data:image')) {
+        parsed.logoUrl = INITIAL_SETTINGS.logoUrl || '/logo.png';
+        changed = true;
+      }
+      if (!parsed.collegeCode) {
+        parsed.collegeCode = INITIAL_SETTINGS.collegeCode;
+        changed = true;
+      }
+      if (changed) {
+        localStorage.setItem(KEYS.SETTINGS, JSON.stringify(parsed));
       }
       return parsed;
     } catch {
+      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
       return INITIAL_SETTINGS;
     }
   }

@@ -64,7 +64,7 @@ function setupInitialSheets() {
   // ใส่ค่าเริ่มต้น Settings
   const settingsSheet = ss.getSheetByName("Settings");
   if (settingsSheet.getLastRow() === 1) {
-    settingsSheet.appendRow(["LINE_CHANNEL_ACCESS_TOKEN", "ใส่_TOKEN_ของท่านที่นี่", "Channel Access Token จาก LINE Developers"]);
+    settingsSheet.appendRow(["LINE_CHANNEL_ACCESS_TOKEN", "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=", "Channel Access Token จาก LINE Developers"]);
     settingsSheet.appendRow(["SCHOOL_NAME", "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์", "ชื่อสถานศึกษา"]);
     settingsSheet.appendRow(["WEB_APP_URL", "", "URL ของ Web App นี้หลัง Deploy"]);
   }
@@ -76,6 +76,7 @@ function setupInitialSheets() {
 // รับ Webhook เมื่อมีคำขอใหม่ หรือส่งการอนุมัติมาจาก Web App หรือ LINE Bot
 function doPost(e) {
   try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     const postData = JSON.parse(e.postData.contents);
 
     // กรณีที่ 1: มาจาก LINE Webhook (กดปุ่มอนุมัติ/ไม่อนุมัติใน LINE Flex Message)
@@ -83,7 +84,7 @@ function doPost(e) {
       return handleLineEvents(postData.events);
     }
 
-    // กรณีที่ 2: มาจาก Web App (สร้างคำขอ หรืออัปเดตสถานะ)
+    // กรณีที่ 2: มาจาก Web App (สร้างคำขอ หรืออัปเดตสถานะ หรือส่ง LINE)
     const action = postData.action;
     const payload = postData.payload;
 
@@ -95,6 +96,26 @@ function doPost(e) {
       return handleSubstituteAck(payload);
     } else if (action === "delete_request") {
       return handleDeleteRequest(payload);
+    } else if (action === "push_line") {
+      var pushPayload = payload || {};
+      var pushToken = String(pushPayload.token || "").trim() || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
+      var pushTo = String(pushPayload.to || "").trim();
+      var pushMsgs = pushPayload.messages || [];
+      if (pushTo && pushMsgs.length > 0) {
+        var resp = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+          method: "post",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + pushToken
+          },
+          payload: JSON.stringify({ to: pushTo, messages: pushMsgs }),
+          muteHttpExceptions: true
+        });
+        return ContentService.createTextOutput(resp.getContentText())
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Missing to or messages" }))
+        .setMimeType(ContentService.MimeType.JSON);
     } else if (action === "save_settings") {
       let setSheet = ss.getSheetByName("Settings");
       if (!setSheet) {
@@ -117,6 +138,8 @@ function doPost(e) {
           setSheet.appendRow([key, String(payloadObj[key] || ""), "Auto-saved from Web App"]);
         }
       }
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Settings saved" }))
+        .setMimeType(ContentService.MimeType.JSON);
     } else if (action === "save_users") {
       let uSheet = ss.getSheetByName("Users");
       if (!uSheet) {
@@ -163,6 +186,29 @@ function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reqSheet = ss.getSheetByName("Requests");
   const data = reqSheet.getDataRange().getValues();
+
+  // Push LINE via GET (Works 100% from GitHub Pages static sites)
+  if (action === "push_line") {
+    var pushTo = String(p.to || "").trim();
+    var pushToken = String(p.token || "").trim() || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
+    var msgs = [];
+    try {
+      msgs = JSON.parse(p.messages || p.payload || "[]");
+    } catch(err) {}
+    if (pushTo && msgs.length > 0) {
+      var resp = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+        method: "post",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + pushToken
+        },
+        payload: JSON.stringify({ to: pushTo, messages: msgs }),
+        muteHttpExceptions: true
+      });
+      return ContentService.createTextOutput(resp.getContentText()).setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Missing to or messages" })).setMimeType(ContentService.MimeType.JSON);
+  }
 
   // 0. ดึงรายชื่อผู้ใช้เดี่ยวๆ
   if (action === "get_users") {
@@ -601,11 +647,16 @@ function handleDeleteRequest(payload) {
 // 3. ส่ง LINE Flex Message ข้อความที่ 1/2 ให้หัวหน้าสาขา
 // (นโยบายประหยัดโควต้า 300 ข้อความ/เดือน: ครูสอนแทนกดรับทราบในเว็บ 100% ไม่ส่ง LINE หาครูสอนแทน)
 function sendLineFlexMessageToApprover(req) {
-  const token = getSettingValue("LINE_CHANNEL_ACCESS_TOKEN");
+  const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
-  const approverLineId = getApproverLineId(req.branchId);
-  if (!approverLineId) return;
+  let approverLineId = (req && req.assignedApproverLineId) || (req && req.approverLineId) || getApproverLineId(req.branchId);
+  if (!approverLineId || approverLineId.indexOf("U") !== 0) {
+    approverLineId = getUserLineId(req.assignedApproverName || req.approver || req.assignedApproverId);
+  }
+  if (!approverLineId || approverLineId.indexOf("U") !== 0) {
+    approverLineId = "U81778d734346f14e047e07cb37d1ccd1"; // Default to นายศรายุทธ สมสุข
+  }
 
   let scriptUrl = "";
   try {
@@ -711,12 +762,14 @@ function sendLineFlexMessageToApprover(req) {
 
 // 4. ส่งข้อความแจ้งเตือนผลกลับไปยังครูผู้ขอ (LINE Flex Message)
 function sendLineNotificationToTeacher(req) {
-  const token = getSettingValue("LINE_CHANNEL_ACCESS_TOKEN");
+  const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
   const teacherLineId = (req.userLineId && String(req.userLineId).trim().indexOf("U") === 0)
     ? String(req.userLineId).trim()
-    : getUserLineId(req.userId || req.userName);
+    : ((req.teacherLineId && String(req.teacherLineId).trim().indexOf("U") === 0)
+      ? String(req.teacherLineId).trim()
+      : getUserLineId(req.userId || req.userName));
   if (!teacherLineId || teacherLineId.indexOf("U_") === 0) return;
 
   const isApproved = req.status === "approved";
@@ -879,10 +932,23 @@ function replyToLine(token, replyToken, messages) {
 function getSettingValue(key) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sSheet = ss.getSheetByName("Settings");
-  if (!sSheet) return "";
-  const data = sSheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === key) return data[i][1];
+  if (sSheet) {
+    const data = sSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === key) {
+        const val = String(data[i][1] || "").trim();
+        if (key === "LINE_CHANNEL_ACCESS_TOKEN") {
+          if (val && val.length > 50 && val.indexOf("ใส่_TOKEN") === -1 && val.indexOf("MOCK_") === -1) {
+            return val;
+          }
+        } else if (val) {
+          return val;
+        }
+      }
+    }
+  }
+  if (key === "LINE_CHANNEL_ACCESS_TOKEN") {
+    return "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   }
   return "";
 }

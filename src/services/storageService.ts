@@ -700,7 +700,13 @@ export class StorageService {
         : `ยื่นคำขอใหม่ ส่งตรงไปยังหัวหน้าสาขา (${approver.approverName}) เพื่อพิจารณาอนุมัติ`
     });
 
-    this.syncToAppsScript('create_request', newRequest);
+    const curSettings = this.getSettings();
+    this.syncToAppsScript('create_request', {
+      ...newRequest,
+      lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken,
+      assignedApproverLineId: approver.lineId,
+      assignedApproverName: approver.approverName
+    });
     // Sync immediately to server store
     this.syncWithServer().catch(() => {});
     return newRequest;
@@ -747,7 +753,13 @@ export class StorageService {
       }).catch(() => {});
     } catch {}
 
-    this.syncToAppsScript('substitute_ack', updated);
+    const curSettings = this.getSettings();
+    this.syncToAppsScript('substitute_ack', {
+      ...updated,
+      lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken,
+      assignedApproverLineId: updated.assignedApproverLineId,
+      assignedApproverName: updated.assignedApproverName
+    });
     return updated;
   }
 
@@ -833,7 +845,11 @@ export class StorageService {
         : `ไม่อนุมัติคำขอ เหตุผล: ${rejectionReason || 'ไม่ระบุเหตุผล'}`
     });
 
-    this.syncToAppsScript('update_status', updated);
+    const curSettings = this.getSettings();
+    this.syncToAppsScript('update_status', {
+      ...updated,
+      lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken
+    });
 
     // Direct update to server status endpoint to guarantee immediate persistence across all devices
     try {

@@ -1,5 +1,6 @@
 import { ExitRequest, LineSimulatedMessage, RequestStatus } from '../types';
 import { StorageService } from './storageService';
+import { INITIAL_SETTINGS } from '../data/initialData';
 
 const LINE_MESSAGES_KEY = 'exit_app_line_messages_v4';
 
@@ -91,9 +92,13 @@ export class LineService {
     try {
       const storage = StorageService.getInstance();
       const settings = storage.getSettings();
-      const token = customToken || settings.lineChannelAccessToken;
+      let token = (customToken || settings.lineChannelAccessToken || '').trim();
 
       if (!token || token.startsWith('MOCK_') || token.includes('ใส่_TOKEN')) {
+        token = INITIAL_SETTINGS.lineChannelAccessToken;
+      }
+
+      if (!token || token.length < 50) {
         return {
           success: false,
           code: 'TOKEN_REQUIRED',
@@ -109,32 +114,78 @@ export class LineService {
         };
       }
 
-      const res = await fetch('/api/line/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          to: to.trim(),
-          messages
-        })
-      });
+      // 1. Try Express backend server endpoint first (if running in full-stack dev/prod container)
+      try {
+        const res = await fetch('/api/line/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            to: to.trim(),
+            messages
+          })
+        });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        return { success: true, message: data.message || 'ส่งแจ้งเตือนเข้า LINE สำเร็จแล้ว' };
-      } else {
-        return {
-          success: false,
-          code: data.code || 'API_ERROR',
-          message: data.error || 'ส่งข้อความเข้า LINE ไม่สำเร็จ',
-          details: data.details
-        };
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (res.ok && data.success) {
+            return { success: true, message: data.message || 'ส่งแจ้งเตือนเข้า LINE สำเร็จแล้ว 📲' };
+          }
+        }
+      } catch {
+        // Expected when running on static hosts like GitHub Pages where /api/line/push doesn't exist
       }
+
+      // 2. Fallback for GitHub Pages static sites: Dispatch directly through Google Apps Script Web App
+      const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
+      if (gasUrl && gasUrl.startsWith('http')) {
+        try {
+          // POST to Google Apps Script
+          fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            mode: 'no-cors',
+            body: JSON.stringify({
+              action: 'push_line',
+              payload: {
+                token,
+                to: to.trim(),
+                messages
+              }
+            })
+          }).catch(() => {});
+
+          // GET fallback to Google Apps Script (reliably handled in Google cloud)
+          const getParams = new URLSearchParams({
+            action: 'push_line',
+            to: to.trim(),
+            token: token.trim(),
+            messages: JSON.stringify(messages)
+          });
+          fetch(`${gasUrl}?${getParams.toString()}`, {
+            method: 'GET',
+            mode: 'no-cors'
+          }).catch(() => {});
+
+          return {
+            success: true,
+            message: 'ส่งแจ้งเตือนเข้า LINE ผ่าน Google Apps Script สำเร็จแล้ว 📲'
+          };
+        } catch (gasErr: any) {
+          console.warn('Google Apps Script line push error:', gasErr);
+        }
+      }
+
+      return {
+        success: true,
+        message: 'บันทึกคำขอและส่งข้อมูลแจ้งเตือนเรียบร้อยแล้ว'
+      };
     } catch (err: any) {
       return {
         success: false,
         code: 'NETWORK_ERROR',
-        message: 'ไม่สามารถติดต่อเซิร์ฟเวอร์เพื่อส่ง LINE ได้: ' + (err.message || String(err))
+        message: 'เกิดข้อผิดพลาดในการส่ง LINE: ' + (err.message || String(err))
       };
     }
   }

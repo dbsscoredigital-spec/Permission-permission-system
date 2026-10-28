@@ -236,6 +236,16 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
+  app.use((_req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (_req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // Helper function to call LINE Messaging API Push
   const pushToLine = async (token: string, to: string, messages: any[]) => {
     const response = await fetch('https://api.line.me/v2/bot/message/push', {
@@ -999,13 +1009,25 @@ async function startServer() {
         autoSyncWithGoogleSheet: true,
         securityContact: "ห้องควบคุมความปลอดภัย ประตู 1 (โทร 02-999-8888 ต่อ 101)"
       };
-      const safeSettings = { ...defaultSettings, ...settings };
-      if (safeSettings.logoUrl && safeSettings.logoUrl.startsWith('data:image')) {
-        safeSettings.logoUrl = '/logo.png';
+      const allowedKeys = [
+        'schoolName', 'collegeCode', 'logoUrl', 'appUrl',
+        'lineChannelAccessToken', 'lineChannelSecret', 'googleAppsScriptUrl',
+        'enableLineNotifications', 'autoSyncWithGoogleSheet', 'securityContact'
+      ];
+      const filteredSettings: any = {};
+      for (const k of allowedKeys) {
+        if (settings && settings[k] !== undefined) {
+          filteredSettings[k] = settings[k];
+        } else {
+          filteredSettings[k] = (defaultSettings as any)[k];
+        }
+      }
+      if (filteredSettings.logoUrl && filteredSettings.logoUrl.startsWith('data:image')) {
+        filteredSettings.logoUrl = '/logo.png';
       }
       const updated = content.replace(
         /export const INITIAL_SETTINGS: SystemSettings = {[\s\S]*?};(?:\r?\n)?/,
-        `export const INITIAL_SETTINGS: SystemSettings = ${JSON.stringify(safeSettings, null, 2)};\n`
+        `export const INITIAL_SETTINGS: SystemSettings = ${JSON.stringify(filteredSettings, null, 2)};\n`
       );
       if (updated !== content) {
         fs.writeFileSync(initPath, updated, 'utf-8');

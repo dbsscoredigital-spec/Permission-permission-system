@@ -342,28 +342,23 @@ export default function App() {
   const handleSubmitRequest = async (formData: any) => {
     const newReq = storage.createRequest(formData);
 
-    if (newReq.status === 'approved') {
-      // Self-approved by Department Head immediately
-      await lineService.sendTeacherStatusNotification(newReq, 'approved', `${newReq.userName} (หัวหน้าสาขา - อนุมัติตนเอง)`);
-      refreshAllData();
-      showToast(`⚡ ยื่นและอนุมัติตัวเองสำเร็จ! หัวหน้าสาขา ${newReq.userName} ได้รับอนุมัติเรียบร้อย พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
-    } else if (newReq.hasClasses && newReq.substituteStatus !== 'acknowledged') {
+    if (newReq.hasClasses && newReq.substituteStatus !== 'acknowledged') {
       // มีภาระงานสอนแทน: ต้องให้ครูผู้สอนแทนกดรับทราบก่อน จึงค่อยส่ง LINE Flex ให้หัวหน้าสาขา!
       refreshAllData();
-      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! มีภาระคาบสอน ระบบจะรอให้ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูสอนแทน'}) กดรับทราบในระบบก่อน จึงจะส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา ⏳`, 'info');
+      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! มีภาระคาบสอน ระบบจะรอให้ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูผู้สอนแทน'}) กดรับทราบในระบบก่อน จึงจะแจ้งเตือนหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติ ⏳`, 'info');
     } else {
-      // กรณีไม่มีคาบสอน: ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาทันที
+      // กรณีไม่มีคาบสอน: ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
       refreshAllData();
       const lineRes = await lineService.sendApproverNotification(newReq);
       refreshAllData();
 
       if (lineRes.success) {
-        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เรียบร้อยแล้ว 📲`, 'success');
+        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติแล้ว 📲`, 'success');
       } else {
         if (lineRes.code === 'TOKEN_REQUIRED') {
-          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! (บันทึกในระบบแล้ว แต่ยังไม่ได้กรอก LINE Channel Access Token ในการตั้งค่าระบบ จึงยังไม่ได้ส่งเข้า LINE)`, 'info');
+          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อรอพิจารณาอนุมัติ`, 'info');
         } else {
-          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! (LINE แจ้งเตือน: ${lineRes.message})`, 'info');
+          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติ (${lineRes.message})`, 'info');
         }
       }
     }

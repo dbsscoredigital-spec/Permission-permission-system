@@ -151,7 +151,6 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   const [headSubTeacherId, setHeadSubTeacherId] = useState('');
   const [headSubSubject, setHeadSubSubject] = useState('');
   const [headSubTasks, setHeadSubTasks] = useState('');
-  const [headSelfApprove, setHeadSelfApprove] = useState(true);
   const [showCreateFormModal, setShowCreateFormModal] = useState(false);
 
   // Candidate substitute teachers (teachers in the same college)
@@ -194,9 +193,8 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
     setHeadTravelMethod('ตามภารกิจราชการ');
     setHeadVehiclePlate('');
     setHeadCompanions('');
-    setHeadNotes('หัวหน้าสาขายื่นคำขอและอนุมัติตัวเองเรียบร้อยทันที');
+    setHeadNotes('เข้าร่วมประชุมภายนอกวิทยาลัย');
     setHeadHasClasses(false);
-    setHeadSelfApprove(true);
   };
 
   const handleHeadSubmit = (e: React.FormEvent) => {
@@ -228,14 +226,13 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
       travelMethod: headTravelMethod,
       vehiclePlate: headVehiclePlate,
       companions: headCompanions,
-      notes: headNotes || (headSelfApprove ? 'คำขอออกนอกสถานศึกษาของหัวหน้าสาขา (อนุมัติตนเองทันที)' : 'คำขอออกนอกสถานศึกษาของหัวหน้าสาขา'),
+      notes: headNotes || 'คำขอออกนอกสถานศึกษาของหัวหน้าสาขา',
       hasClasses: headHasClasses,
       substituteTeacherId: headHasClasses ? headSubTeacherId : undefined,
       substituteTeacherName: headHasClasses && selectedSub ? selectedSub.name : undefined,
       substituteSubject: headHasClasses ? headSubSubject : undefined,
       substituteTasks: headHasClasses ? headSubTasks : undefined,
-      substituteStatus: headHasClasses ? (headSelfApprove ? 'acknowledged' : 'pending' as const) : ('not_required' as const),
-      selfApprove: headSelfApprove
+      substituteStatus: headHasClasses ? ('pending' as const) : ('not_required' as const)
     };
 
     onSubmitRequest(payload);
@@ -1045,7 +1042,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                       )}
                       {req.status === 'approved' && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          <CheckCircle className="w-3.5 h-3.5" /> อนุมัติตนเองแล้ว
+                          <CheckCircle className="w-3.5 h-3.5" /> อนุมัติแล้ว
                         </span>
                       )}
                       {req.status === 'rejected' && (
@@ -1073,14 +1070,19 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
 
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                     {req.status === 'pending' && (
-                      <button
-                        onClick={() => handleApproveAction(req.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
-                        title="หัวหน้าสาขาสามารถกดอนุมัติตัวเองได้ทันที"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        <span>✅ อนุมัติตัวเองทันที</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {req.hasClasses && req.substituteStatus === 'pending' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>รอครูผู้สอนแทน ({req.substituteTeacherName || 'ครูสอนแทน'}) กดรับทราบ</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200">
+                            <Clock className="w-3.5 h-3.5 text-blue-600" />
+                            <span>รอ{req.assignedApproverName || 'ผู้บริหาร'}พิจารณาอนุมัติ</span>
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {req.status === 'approved' && (
@@ -1282,27 +1284,6 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 />
               </div>
 
-              {/* Self-Approval Toggle Option */}
-              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={headSelfApprove}
-                    onChange={(e) => setHeadSelfApprove(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-600 mt-0.5 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
-                      <span>⚡ อนุมัติตัวเองทันที (Self-Approval)</span>
-                      <span className="bg-emerald-200 text-emerald-800 text-[10px] px-1.5 py-0.2 rounded font-bold">สิทธิ์หัวหน้าสาขา</span>
-                    </span>
-                    <span className="text-[11px] text-emerald-700 block mt-0.5">
-                      หัวหน้าสาขามีอำนาจอนุมัติตัวเองได้เลยทันที โดยระบบจะบันทึกสถานะ "อนุมัติแล้ว" และออกบัตรผ่าน QR Code ให้ทันทีโดยไม่ต้องรอผู้อื่น
-                    </span>
-                  </div>
-                </label>
-              </div>
-
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="button"
@@ -1315,14 +1296,8 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-500/25 cursor-pointer flex items-center gap-1.5"
                 >
-                  {headSelfApprove ? (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      <span>ยื่นและอนุมัติตัวเองทันที</span>
-                    </>
-                  ) : (
-                    <span>ยืนยันยื่นคำขอ</span>
-                  )}
+                  <Send className="w-4 h-4" />
+                  <span>ยืนยันยื่นคำขอ</span>
                 </button>
               </div>
             </form>
@@ -1474,7 +1449,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                     onClick={() => handleApproveAction(selectedReq.id)}
                     className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/25 cursor-pointer"
                   >
-                    ✅ อนุมัติคำขอทันที
+                    ✅ อนุมัติคำขอ
                   </button>
                 )}
               </div>

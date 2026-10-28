@@ -208,6 +208,12 @@ export class StorageService {
       logoUrl: safeLogo,
       schoolName: curSettings.schoolName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
       collegeCode: curSettings.collegeCode || 'DONBOSCO-SURAT-2026',
+      gasUrl: curSettings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl,
+      lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken,
+      lineSecret: curSettings.lineChannelSecret || INITIAL_SETTINGS.lineChannelSecret,
+      enableLineNotifications: curSettings.enableLineNotifications ?? true,
+      autoSyncWithGoogleSheet: curSettings.autoSyncWithGoogleSheet ?? true,
+      securityContact: curSettings.securityContact || INITIAL_SETTINGS.securityContact,
       updatedAt: Date.now()
     });
 
@@ -443,25 +449,23 @@ export class StorageService {
     }
   }
 
-  // Automatically find approver by branch (department head can self-approve)
+  // Automatically find approver by branch (always requires separate approver, no self-approvals)
   public getApproverForBranch(branchId: string, requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
     const branches = this.getBranches();
     const branch = branches.find(b => b.id === branchId || b.name === branchId);
     const users = this.getUsers();
-    const requester = users.find(u => u.id === requesterUserId);
 
-    // If requester is the department head themselves (or has approver role):
-    // They have full authority to approve their own exit permission!
-    if (requester && (requester.role === 'approver' || (branch && branch.approverUserId === requester.id))) {
-      return {
-        approverId: requester.id,
-        approverName: `${requester.name} (${requester.position} - อนุมัติตนเอง)`,
-        lineId: requester.lineId
+    // 1. Look for active department head in this branch who is NOT the requester
+    if (branch && branch.approverUserId && requesterUserId !== branch.approverUserId) {
+      const u = users.find(user => user.id === branch.approverUserId);
+      return { 
+        approverId: branch.approverUserId, 
+        approverName: branch.approverName || (u ? `${u.name} (หัวหน้าสาขา${branch.name})` : 'หัวหน้าสาขา'),
+        lineId: u?.lineId
       };
     }
 
-    // 1. Look for active user with 'approver' role in this branch
-    const branchApproverUser = users.find(u => (u.branchId === branchId || (branch && u.branchName === branch.name)) && u.role === 'approver');
+    const branchApproverUser = users.find(u => (u.branchId === branchId || (branch && u.branchName === branch.name)) && u.role === 'approver' && u.id !== requesterUserId);
     if (branchApproverUser) {
       return {
         approverId: branchApproverUser.id,
@@ -470,21 +474,21 @@ export class StorageService {
       };
     }
 
-    // 2. Look by branch.approverUserId
-    if (branch) {
-      const u = users.find(user => user.id === branch.approverUserId);
-      return { 
-        approverId: branch.approverUserId, 
-        approverName: branch.approverName,
-        lineId: u?.lineId
+    // 2. If requester IS the department head of this branch, route to Senior Approver / Academic Head (e.g. นางกนกวรรณ ธนาพล หรือ ผู้บริหาร)
+    const seniorApprover = users.find(u => u.id === 'usr-915068' && u.id !== requesterUserId) || users.find(u => u.role === 'admin' && u.id !== requesterUserId) || users[0];
+    if (seniorApprover) {
+      return {
+        approverId: seniorApprover.id,
+        approverName: `${seniorApprover.name} (ฝ่ายวิชาการ/ผู้บริหาร)`,
+        lineId: seniorApprover.lineId
       };
     }
 
     // Fallback to general head
     const gen = branches.find(b => b.id === 'GEN');
-    const genUser = users.find(user => user.id === (gen ? gen.approverUserId : 'usr-head-gen'));
+    const genUser = users.find(user => user.id === (gen ? gen.approverUserId : 'usr-915068'));
     return {
-      approverId: gen ? gen.approverUserId : 'usr-head-gen',
+      approverId: gen ? gen.approverUserId : 'usr-915068',
       approverName: gen ? gen.approverName : 'หัวหน้าครูสามัญ',
       lineId: genUser?.lineId
     };
@@ -647,7 +651,7 @@ export class StorageService {
     return true;
   }
 
-  public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'> & { selfApprove?: boolean }): ExitRequest {
+  public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'>): ExitRequest {
     const approver = this.getApproverForBranch(requestData.branchId, requestData.userId);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
@@ -659,10 +663,6 @@ export class StorageService {
 
     const users = this.getUsers();
     const requester = users.find(u => u.id === requestData.userId);
-    const isAdminRequester = requester?.role === 'admin';
-    const isHeadRequester = requester && (requester.role === 'approver' || approver.approverId === requester.id);
-    const canSelfApprove = isAdminRequester || isHeadRequester;
-    const shouldSelfApprove = requestData.selfApprove !== undefined ? requestData.selfApprove : canSelfApprove;
 
     const finalUserName = (requester?.name || requestData.userName || 'ครูผู้ขอ').replace(/\s+/g, ' ').trim();
 
@@ -671,17 +671,15 @@ export class StorageService {
       id,
       userName: finalUserName,
       submittedAt: thaiSubmittedAt,
-      status: shouldSelfApprove ? 'approved' : 'pending',
-      approvedAt: shouldSelfApprove ? thaiSubmittedAt : undefined,
-      approvedBy: shouldSelfApprove 
-        ? `${finalUserName} (${isAdminRequester ? 'ผู้ดูแลระบบ (Admin)' : (requester?.position || requestData.position)} - อนุมัติตัวเอง)` 
-        : undefined,
+      status: 'pending', // ALWAYS pending on creation - requires department head approval!
+      approvedAt: undefined,
+      approvedBy: undefined,
       assignedApproverId: approver.approverId,
       assignedApproverName: approver.approverName,
       assignedApproverLineId: approver.lineId,
       userLineId: requester?.lineId || (requestData as any).userLineId || (requestData as any).teacherLineId || '',
       teacherLineId: requester?.lineId || (requestData as any).teacherLineId || (requestData as any).userLineId || '',
-      substituteStatus: requestData.hasClasses ? (shouldSelfApprove ? 'acknowledged' : 'pending') : 'not_required',
+      substituteStatus: requestData.hasClasses ? 'pending' : 'not_required',
       qrToken,
       userUsername: requester?.username || (requestData as any).userUsername
     } as any;
@@ -695,11 +693,11 @@ export class StorageService {
       requestSummary: `${newRequest.userName} (${newRequest.position}) ขอออกไป ${newRequest.destination}`,
       actorId: newRequest.userId,
       actorName: newRequest.userName,
-      actorRole: isAdminRequester ? 'ผู้ดูแลระบบ (อนุมัติตัวเอง)' : (isHeadRequester ? 'หัวหน้าสาขา (อนุมัติตนเอง)' : 'ครูผู้ขอ'),
-      action: shouldSelfApprove ? 'approve' : 'submit',
-      comment: shouldSelfApprove
-        ? `${isAdminRequester ? 'ผู้ดูแลระบบ (Admin)' : 'หัวหน้าสาขา'} (${newRequest.userName}) ยื่นคำขอและอนุมัติตนเองเรียบร้อยทันที (Self-Approved) พร้อมออกบัตรผ่าน QR Code`
-        : `ยื่นคำขอใหม่ ส่งตรงถึง ${approver.approverName} อัตโนมัติ`
+      actorRole: requester?.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : (requester?.position || 'ครูผู้สอน'),
+      action: 'submit',
+      comment: newRequest.hasClasses
+        ? `ยื่นคำขอใหม่ มีภาระงานสอน รอครูผู้สอนแทน (${newRequest.substituteTeacherName || 'ครูผู้สอนแทน'}) กดรับทราบในระบบ ก่อนแจ้งเตือนหัวหน้าสาขา (${approver.approverName}) พิจารณาอนุมัติ`
+        : `ยื่นคำขอใหม่ ส่งตรงไปยังหัวหน้าสาขา (${approver.approverName}) เพื่อพิจารณาอนุมัติ`
     });
 
     this.syncToAppsScript('create_request', newRequest);
@@ -980,7 +978,12 @@ export class StorageService {
         try {
           const meta = JSON.parse(sysRow.destination);
           if (meta && typeof meta === 'object') {
-            settings = meta;
+            settings = {
+              ...meta,
+              googleAppsScriptUrl: meta.gasUrl || meta.googleAppsScriptUrl,
+              lineChannelAccessToken: meta.lineToken || meta.lineChannelAccessToken,
+              lineChannelSecret: meta.lineSecret || meta.lineChannelSecret
+            };
           }
         } catch {}
       }

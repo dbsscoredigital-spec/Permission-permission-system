@@ -271,9 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? '1. ยื่นคำขอออกนอก & ประวัติของฉัน' 
                   : currentUser.role === 'approver' 
                     ? '1. ยื่นคำขอออกนอกของฉัน' 
-                    : currentUser.role === 'admin'
-                      ? '1. ยื่นคำขอออกนอก (แอดมินอนุมัติตัวเองได้)'
-                      : '1. ยื่นคำขอออกนอก'}
+                    : '1. ยื่นคำขอออกนอก'}
               </span>
               {currentUser.role === 'teacher' && (
                 <span className="text-[10px] bg-blue-500/20 text-blue-100 px-1.5 py-0.5 rounded-full font-normal hidden sm:inline-block">

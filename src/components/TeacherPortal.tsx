@@ -86,13 +86,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const currentBranch = branches.find(b => b.id === currentUser.branchId || b.name === currentUser.branchName);
   const isAdmin = currentUser.role === 'admin';
   const isHeadOfDept = currentUser.role === 'approver' || (currentBranch && currentBranch.approverUserId === currentUser.id);
-  const canSelfApprove = isAdmin || isHeadOfDept;
-  const autoApproverName = isAdmin
-    ? `${currentUser.name} (ผู้ดูแลระบบ - อนุมัติตนเองได้ทันที)`
-    : isHeadOfDept
-    ? `${currentUser.name} (${currentUser.position} - อนุมัติตนเองได้ทันที)`
-    : (currentBranch ? currentBranch.approverName : 'หัวหน้าสาขาประจำสังกัด');
-  const [headSelfApprove, setHeadSelfApprove] = useState<boolean>(true);
+  const autoApproverName = currentBranch ? currentBranch.approverName : 'หัวหน้าสาขาประจำสังกัด';
   const [syncingLine, setSyncingLine] = useState<boolean>(false);
 
   const handleManualSyncLine = async () => {
@@ -185,8 +179,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     setSubstituteTeacherId('');
     setSubstituteSubject('');
     setSubstituteTasks('');
-    setNotes('หัวหน้าสาขายื่นคำขอและอนุมัติตัวเองทันที');
-    setHeadSelfApprove(true);
+    setNotes('เข้าร่วมประชุมตามหนังสือราชการ');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -220,14 +213,13 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       travelMethod: 'ตามภารกิจราชการ',
       vehiclePlate: '',
       companions: '',
-      notes: notes || (canSelfApprove && headSelfApprove ? `${isAdmin ? 'ผู้ดูแลระบบ (Admin)' : 'หัวหน้าสาขา'}ยื่นขออนุญาตและอนุมัติตัวเองเรียบร้อย` : ''),
+      notes: notes || '',
       hasClasses,
       substituteTeacherId: hasClasses ? substituteTeacherId : undefined,
       substituteTeacherName: hasClasses && selectedSubTeacher ? selectedSubTeacher.name : undefined,
       substituteSubject: hasClasses ? substituteSubject : undefined,
       substituteTasks: hasClasses ? substituteTasks : undefined,
-      substituteStatus: hasClasses ? (canSelfApprove && headSelfApprove ? 'acknowledged' : 'pending' as const) : ('not_required' as const),
-      selfApprove: canSelfApprove ? headSelfApprove : undefined
+      substituteStatus: hasClasses ? ('pending' as const) : ('not_required' as const)
     };
 
     onSubmitRequest(payload);
@@ -443,18 +435,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-slate-900 flex flex-wrap items-center gap-2">
                     <span>ยื่นคำขออนุญาตออกนอกบริเวณสถานศึกษา</span>
-                    {canSelfApprove && (
-                      <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full border ${isAdmin ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                        {isAdmin ? 'สำหรับผู้ดูแลระบบ (Admin)' : 'สำหรับหัวหน้าสาขาวิชา'}
-                      </span>
-                    )}
                   </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
-                    {isAdmin
-                      ? 'ในฐานะผู้ดูแลระบบ (Admin) ท่านมีสิทธิ์อนุมัติตัวเองได้เลยทันที พร้อมรับบัตรผ่าน QR Code ทันที'
-                      : isHeadOfDept 
-                      ? 'ในฐานะหัวหน้าสาขาวิชา ท่านมีสิทธิ์อนุมัติตัวเองได้เลยทันที พร้อมรับบัตรผ่าน QR Code ทันที' 
-                      : 'ระบบจะส่งแจ้งเตือน LINE ไปยังหัวหน้าสาขาโดยอัตโนมัติ ไม่ต้องเลือกผู้อนุมัติเอง'}
+                    {hasClasses
+                      ? 'มีภาระงานสอน: ระบบจะรอให้ครูผู้สอนแทนกดรับทราบก่อน จึงส่งเรื่องให้หัวหน้าสาขาพิจารณาอนุมัติ'
+                      : 'ไม่มีภาระงานสอน: ระบบจะส่งคำขอไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -706,63 +691,23 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                   </div>
                 </div>
 
-                {/* Self-Approval Toggle for Department Head or Admin */}
-                {canSelfApprove && (
-                  <div className={`p-3.5 rounded-2xl border ${isAdmin ? 'bg-purple-50 border-purple-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                    <label className="flex items-start gap-2.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={headSelfApprove}
-                        onChange={(e) => setHeadSelfApprove(e.target.checked)}
-                        className={`w-4 h-4 rounded mt-0.5 cursor-pointer ${isAdmin ? 'text-purple-600' : 'text-emerald-600'}`}
-                      />
-                      <div>
-                        <span className={`font-bold text-xs flex items-center gap-1.5 ${isAdmin ? 'text-purple-950' : 'text-emerald-950'}`}>
-                          <span>⚡ อนุมัติตัวเองทันที (Self-Approval)</span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${isAdmin ? 'bg-purple-200 text-purple-800' : 'bg-emerald-200 text-emerald-800'}`}>
-                            {isAdmin ? 'สิทธิ์ผู้ดูแลระบบ (Admin)' : 'สิทธิ์หัวหน้าสาขา'}
-                          </span>
-                        </span>
-                        <span className={`text-[11px] block mt-0.5 ${isAdmin ? 'text-purple-700' : 'text-emerald-700'}`}>
-                          {isAdmin 
-                            ? 'ผู้ดูแลระบบ (Admin) มีอำนาจอนุมัติตัวเองได้ทันที เมื่อกดยื่นคำขอจะได้รับสถานะ "อนุมัติแล้ว" พร้อมรับบัตรผ่าน QR Code ทันที' 
-                            : 'หัวหน้าสาขามีอำนาจอนุมัติตนเองได้ทันที เมื่อกดยื่นคำขอจะได้รับสถานะ "อนุมัติแล้ว" พร้อมรับบัตรผ่าน QR Code ทันที'}
-                        </span>
-                      </div>
-                    </label>
-                  </div>
-                )}
-
                 {/* Submit Action */}
                 <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
                     <span>
-                      {canSelfApprove && headSelfApprove
-                        ? 'เมื่อกดยืนยัน ระบบจะอนุมัติทันทีและออกบัตรผ่าน QR Code'
-                        : `เมื่อกดยืนยัน ระบบจะส่งคำขอไปยัง ${autoApproverName} ทันที`}
+                      {hasClasses
+                        ? 'มีคาบสอน: ต้องรอครูผู้สอนแทนกดรับทราบก่อน จึงจะแจ้งเตือนหัวหน้าสาขาเพื่อพิจารณาอนุมัติ'
+                        : `ไม่มีคาบสอน: ส่งคำขอตรงไปยังหัวหน้าสาขา (${autoApproverName}) เพื่อพิจารณาอนุมัติทันที`}
                     </span>
                   </div>
 
                   <button
                     type="submit"
-                    className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-white font-semibold text-sm transition-all shadow-md cursor-pointer ${
-                      canSelfApprove && headSelfApprove
-                        ? (isAdmin ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25')
-                        : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
-                    }`}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-white font-semibold text-sm transition-all shadow-md cursor-pointer bg-blue-600 hover:bg-blue-700 shadow-blue-500/25"
                   >
-                    {canSelfApprove && headSelfApprove ? (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        <span>ยื่นและอนุมัติตัวเองทันที</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        <span>ส่งคำขอออกนอกสถานศึกษา</span>
-                      </>
-                    )}
+                    <Send className="w-4 h-4" />
+                    <span>ส่งคำขอออกนอกสถานศึกษา</span>
                   </button>
                 </div>
               </form>
@@ -1014,16 +959,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       </span>
 
                       <div className="flex items-center gap-2">
-                        {isPending && canSelfApprove && onApprove && (
-                          <button
-                            onClick={() => onApprove(req.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs transition-all"
-                            title="อนุมัติคำขอนี้ด้วยตนเองทันที"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>⚡ อนุมัติตัวเอง</span>
-                          </button>
-                        )}
 
                         {isApproved && (
                           <>

@@ -38,7 +38,7 @@ export const INITIAL_USERS: User[] = [
     "id": "usr-import-64663",
     "username": "patumwan5817@gmail.com",
     "password": "1234",
-    "name": "นายปิยะพงษ์ รอดเภทโพธิ์",
+    "name": "นายปิยะพงษ์ รอดนาโพธิ์",
     "role": "teacher",
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
@@ -60,7 +60,7 @@ export const INITIAL_USERS: User[] = [
     "id": "usr-import-64665",
     "username": "kumpee",
     "password": "1234",
-    "name": "นายคัมภีร์ ช่วยเพชร หัวหน้าสาขา",
+    "name": "นายคัมภีร์ ช่วยเพชร",
     "role": "approver",
     "branchId": "ME",
     "branchName": "ช่างกลโรงงาน",
@@ -77,17 +77,6 @@ export const INITIAL_USERS: User[] = [
     "branchName": "ธุรกิจดิจิทัล",
     "position": "ผู้ดูแลระบบ / รองผู้อำนวยการ",
     "lineId": "U_ADMIN_CENTRAL"
-  },
-  {
-    "id": "usr-security",
-    "username": "guard",
-    "password": "password123",
-    "name": "นายบุญส่ง มั่นคง (เจ้าหน้าที่รักษาความปลอดภัย ประตู 1)",
-    "role": "security",
-    "branchId": "GEN",
-    "branchName": "ฝ่ายอาคารสถานที่",
-    "position": "เจ้าหน้าที่ รปภ. / ตรวจสอบประตู",
-    "lineId": "U_SECURITY_GATE"
   },
   {
     "id": "usr-import-68031",
@@ -226,7 +215,7 @@ export const INITIAL_USERS: User[] = [
     "username": "masterball.dbs@gmail.com",
     "password": "sarayut.2543",
     "name": "นายศรายุทธ       สมสุข",
-    "role": "approver",
+    "role": "teacher",
     "branchId": "DB",
     "branchName": "ธุรกิจดิจิทัล",
     "position": "ครูผู้สอน",
@@ -259,11 +248,11 @@ export const INITIAL_USERS: User[] = [
     "username": "7777",
     "password": "7777",
     "name": "นายเอกราช    อาจณรงค์",
-    "role": "teacher",
+    "role": "approver",
     "branchId": "DB",
     "branchName": "ธุรกิจดิจิทัล",
     "position": "ครูผู้สอน",
-    "lineId": "U81778d734346f14e047e07cb37d1ccd1"
+    "lineId": "Uedc4422b785b7a8d1f6c85ae2eb950cf"
   },
   {
     "id": "usr-import-85626",
@@ -394,14 +383,14 @@ export const INITIAL_REQUESTS: ExitRequest[] = [];
 export const INITIAL_APPROVAL_LOGS: ApprovalLog[] = [];
 
 export const INITIAL_SETTINGS: SystemSettings = {
-  schoolName: "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์",
-  collegeCode: "DONBOSCO-SURAT-2026",
-  logoUrl: "/logo.png",
-  appUrl: "",
-  lineChannelAccessToken: "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=",
-  lineChannelSecret: "c827361fae4981bc923a",
-  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec",
-  enableLineNotifications: true,
-  autoSyncWithGoogleSheet: true,
-  securityContact: "ห้องควบคุมความปลอดภัย ประตู 1 (โทร 02-999-8888 ต่อ 101)"
+  "schoolName": "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์",
+  "collegeCode": "DONBOSCO-SURAT-2026",
+  "logoUrl": "/logo.png",
+  "appUrl": "",
+  "lineChannelAccessToken": "2b1Q79G/0wM2Vr3E+Hpn8tw8ndTvF15LyE81TQTPH3I4FURK+1bizjv2kMp1NSdfid1nAMxyvRp7y84ZCPr15+6VA68n0PuNujUnteds7gbejq0k1bFFOyjx1bZ8aB+r0VIhyj8f15DNDQhCyIhi1Wd004t89/l0/w1cDny1lFU=",
+  "lineChannelSecret": "c827361fae4981bc923a",
+  "googleAppsScriptUrl": "https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec",
+  "enableLineNotifications": true,
+  "autoSyncWithGoogleSheet": true,
+  "securityContact": "ห้องควบคุมความปลอดภัย ประตู 1 (โทร 02-999-8888 ต่อ 101)"
 };

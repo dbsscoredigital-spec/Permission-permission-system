@@ -1,6 +1,35 @@
 {
   "requests": [
     {
+      "id": "REQ-20261029-195",
+      "userId": "usr-import-85625",
+      "userName": "นายเอกราช อาจณรงค์",
+      "branchId": "DB",
+      "branchName": "ธุรกิจดิจิทัล",
+      "position": "ครูผู้สอน",
+      "userPhone": "",
+      "userLineId": "U81778d734346f14e047e07cb37d1ccd1",
+      "teacherLineId": "U81778d734346f14e047e07cb37d1ccd1",
+      "userUsername": "7777",
+      "submittedAt": "2569-10-29T08:58:00.000Z",
+      "exitDate": "2026-10-28T17:00:00.000Z",
+      "exitTime": "1899-12-30T03:47:56.000Z",
+      "returnTime": "1899-12-30T05:17:56.000Z",
+      "destination": ";ol;l;lk",
+      "reason": "lk;lk;",
+      "travelMethod": "ตามภารกิจราชการ",
+      "assignedApproverId": "usr-import-85622",
+      "assignedApproverName": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
+      "status": "approved",
+      "approvedAt": "2569-10-29 15:58",
+      "approvedBy": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
+      "qrToken": "SECURE-EXIT-REQ-20261029-195-DB-3C4MNY",
+      "hasClasses": false,
+      "substituteStatus": "not_required",
+      "approver": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
+      "notes": ""
+    },
+    {
       "id": "REQ-20261029-728",
       "userId": "usr-import-85625",
       "userName": "นายเอกราช อาจณรงค์",
@@ -593,6 +622,17 @@
       "action": "approve",
       "timestamp": "2569-10-29 15:45",
       "comment": "หัวหน้าสาขากดอนุมัติคำขอ REQ-20261029-728 ผ่าน LINE เรียบร้อยแล้ว (ตรวจพบและซิงค์ข้อมูลสำเร็จ)"
+    },
+    {
+      "id": "LOG-GAS-ALL-1793264339305-254",
+      "requestId": "REQ-20261029-195",
+      "requestSummary": "นายเอกราช อาจณรงค์ ขอออกไป ;ol;l;lk",
+      "actorId": "line-gas-approver",
+      "actorName": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
+      "actorRole": "หัวหน้าสาขา",
+      "action": "approve",
+      "timestamp": "2569-10-29 15:58",
+      "comment": "หัวหน้าสาขากดอนุมัติคำขอ REQ-20261029-195 ผ่าน LINE เรียบร้อยแล้ว (ตรวจพบและซิงค์ข้อมูลสำเร็จ)"
     }
   ],
   "users": [

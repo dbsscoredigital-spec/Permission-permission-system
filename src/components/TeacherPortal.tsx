@@ -24,7 +24,8 @@ import {
   Handshake,
   AlertTriangle,
   Lock,
-  RefreshCw
+  RefreshCw,
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { StorageService } from '../services/storageService';
@@ -78,6 +79,23 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [decliningReqId, setDecliningReqId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState<string>('');
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+  const [substituteShareModalReq, setSubstituteShareModalReq] = useState<any | null>(null);
+
+  const openLineShare = (req: Partial<ExitRequest>) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://dbsscoredigital-spec.github.io/Permission-permission-system';
+    const subAckUrl = `${origin}/?tab=teacher&subtab=substitute-tasks&reqId=${encodeURIComponent(req.id || '')}`;
+    const text = `🔔 ขอความอนุเคราะห์สอนแทน (วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์)
+เรียน: ${req.substituteTeacherName || 'ครูผู้สอนแทน'}
+จาก: ${req.userName || currentUser.name} (${req.branchName || currentUser.branchName})
+📅 วันที่: ${req.exitDate} เวลา: ${req.exitTime} – ${req.returnTime} น.
+📚 รายวิชา: ${req.substituteSubject || 'ภาระงานประจำวัน'}
+📝 งานที่มอบหมาย: ${req.substituteTasks || 'ตามที่ได้ประสานงาน'}
+
+📌 กรุณากดลิงก์นี้เพื่อเข้าสู่ระบบและกด "รับทราบภาระงานสอนแทน" เพื่อส่งต่อให้หัวหน้าสาขาพิจารณาอนุมัติต่อไปครับ:
+${subAckUrl}`;
+    const shareUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+    window.open(shareUrl, '_blank');
+  };
 
   // List of other teachers available for substitute teaching
   const candidateSubstituteTeachers = users.filter(u => u.id !== currentUser.id && (u.role === 'teacher' || u.role === 'approver'));
@@ -223,6 +241,14 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     };
 
     onSubmitRequest(payload);
+
+    if (hasClasses && selectedSubTeacher) {
+      setSubstituteShareModalReq({
+        ...payload,
+        id: `REQ-${new Date().getFullYear() + 543}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}`,
+        substituteTeacherName: selectedSubTeacher.name
+      });
+    }
 
     try {
       confetti({
@@ -928,6 +954,19 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                                 ภาระงาน: {req.substituteTasks}
                               </div>
                             )}
+                            {req.substituteStatus === 'pending' && (
+                              <div className="pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openLineShare(req)}
+                                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#06c755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
+                                  title="ส่งข้อความแจ้งครูสอนแทนทาง LINE โดยตรง ไม่เสียโควต้าบอท"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                                  <span>📲 ส่งแชทแจ้งครูสอนแทนทาง LINE (ฟรี 0 ข้อความ)</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1204,6 +1243,58 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ส่งข้อความแจ้งครูผู้สอนแทนทาง LINE (ฟรี 0 ข้อความ ไม่เสียโควต้า) */}
+      {substituteShareModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 text-white text-center">
+              <div className="w-12 h-12 rounded-full bg-white/20 mx-auto flex items-center justify-center mb-2">
+                <MessageCircle className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="text-lg font-bold">ยื่นคำขอสำเร็จแล้ว!</h3>
+              <p className="text-xs text-emerald-100 mt-1">ส่งแจ้งเตือนครูผู้สอนแทนทาง LINE เพื่อให้กดรับทราบในระบบ</p>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-50 rounded-xl p-3.5 border border-amber-200 text-xs space-y-1.5 text-amber-950">
+                <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-amber-700" />
+                  <span>รอครูผู้สอนแทนกดรับทราบในระบบ</span>
+                </div>
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  ตามระเบียบของสถานศึกษา เมื่อครูผู้สอนแทน (<strong>{substituteShareModalReq.substituteTeacherName}</strong>) กดรับทราบในระบบแล้ว ระบบจะส่งข้อความ Flex Message แจ้งเตือนหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
+                </p>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs text-slate-700 space-y-1">
+                <div>👨‍🏫 ครูผู้สอนแทน: <strong>{substituteShareModalReq.substituteTeacherName}</strong></div>
+                <div>📚 วิชาที่ขอให้สอนแทน: <strong>{substituteShareModalReq.substituteSubject || 'ภาระงานประจำวัน'}</strong></div>
+                <div>📅 วันที่: <strong>{substituteShareModalReq.exitDate}</strong> เวลา: <strong>{substituteShareModalReq.exitTime} – {substituteShareModalReq.returnTime} น.</strong></div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => openLineShare(substituteShareModalReq)}
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#06c755] hover:bg-[#05b34c] text-white font-bold rounded-xl shadow-md transition active:scale-95 cursor-pointer text-sm"
+                >
+                  <MessageCircle className="w-5 h-5 fill-white" />
+                  <span>📲 ส่งแชทแจ้งครูสอนแทนทาง LINE (ฟรี 0 ข้อความ)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubstituteShareModalReq(null)}
+                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition cursor-pointer"
+                >
+                  เสร็จสิ้น / ดูรายการคำขอของฉัน
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

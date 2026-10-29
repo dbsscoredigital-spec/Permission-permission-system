@@ -1050,12 +1050,20 @@ export class StorageService {
       return;
     }
     try {
-      await fetch(settings.googleAppsScriptUrl, {
+      // 1. POST
+      fetch(settings.googleAppsScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         mode: 'no-cors',
         body: JSON.stringify({ action, payload, timestamp: new Date().toISOString() })
-      });
+      }).catch(() => {});
+
+      // 2. GET fallback (Reliable execution in Google cloud from any domain)
+      const getUrl = `${settings.googleAppsScriptUrl}?action=${encodeURIComponent(action)}&payload=${encodeURIComponent(JSON.stringify(payload))}`;
+      fetch(getUrl, {
+        method: 'GET',
+        mode: 'no-cors'
+      }).catch(() => {});
     } catch {
       // In web preview or if URL is offline, fail silently
     }

@@ -279,6 +279,45 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
   };
 
+  const [testingFlex, setTestingFlex] = useState(false);
+  const handleTestPushFlexToApprover = async () => {
+    setTestingFlex(true);
+    try {
+      const sampleReq: ExitRequest = {
+        id: `REQ-${Date.now().toString().slice(-6)}`,
+        userId: 'usr-import-85625',
+        userName: 'นายเอกราช อาจณรงค์',
+        branchId: 'DB',
+        branchName: 'ธุรกิจดิจิทัล',
+        position: 'ครูผู้สอน',
+        submittedAt: 'วันนี้',
+        exitDate: new Date().toISOString().slice(0, 10),
+        exitTime: '10:30',
+        returnTime: '12:00',
+        destination: 'ธนาคารกรุงไทย สาขาศาลายา',
+        reason: 'นำส่งเอกสารราชการวิทยาลัย (ทดสอบการแจ้งเตือน)',
+        travelMethod: 'ตามภารกิจราชการ',
+        assignedApproverId: 'usr-import-85622',
+        assignedApproverName: 'นายศรายุทธ สมสุข',
+        assignedApproverLineId: 'U81778d734346f14e047e07cb37d1ccd1',
+        status: 'pending',
+        hasClasses: false,
+        substituteStatus: 'not_required',
+        qrToken: 'SECURE-TEST'
+      };
+      const res = await LineService.getInstance().sendApproverNotification(sampleReq);
+      if (res.success) {
+        alert('✅ ส่ง LINE Flex Message จำลองคำขอไปยังหัวหน้าสาขา (นายศรายุทธ สมสุข - Ball sarayut) สำเร็จแล้ว!\n\nกรุณาเปิดดูในแอป LINE ได้เลยครับ');
+      } else {
+        alert('เกิดข้อผิดพลาดในการส่ง LINE: ' + res.message);
+      }
+    } catch (err: any) {
+      alert('เกิดข้อผิดพลาด: ' + (err.message || String(err)));
+    } finally {
+      setTestingFlex(false);
+    }
+  };
+
   // Parse bulk user text lines
   const parseBulkUsersText = (text: string, defaultBranchId: string): User[] => {
     if (!text || !text.trim()) return [];
@@ -2163,15 +2202,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     คัดลอกจากแท็บ Messaging API &gt; Channel access token (long-lived) ใน LINE Developers Console
                   </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={verifyTokenLoading || !localSettings.lineChannelAccessToken || localSettings.lineChannelAccessToken.startsWith('MOCK_')}
-                  onClick={handleVerifyLineBot}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Bot className="w-3.5 h-3.5" />
-                  <span>{verifyTokenLoading ? 'กำลังตรวจสอบ...' : '🔍 ตรวจสอบ Token กับบอท'}</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    disabled={verifyTokenLoading || !localSettings.lineChannelAccessToken || localSettings.lineChannelAccessToken.startsWith('MOCK_')}
+                    onClick={handleVerifyLineBot}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    <span>{verifyTokenLoading ? 'กำลังตรวจสอบ...' : '🔍 ตรวจสอบ Token'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={testingFlex}
+                    onClick={handleTestPushFlexToApprover}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-xs disabled:opacity-50 transition-colors"
+                    title="ทดสอบส่ง Flex Message คำขอจำลองไปยัง LINE ของนายศรายุทธ สมสุข ทันที"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{testingFlex ? 'กำลังยิง LINE...' : '📲 ทดสอบส่ง Flex หาหัวหน้า'}</span>
+                  </button>
+                </div>
               </div>
 
               <textarea

@@ -210,6 +210,30 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Missing to or messages" })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0.1 จัดการสร้างคำขอผ่าน GET (สำหรับ Static Client / GitHub Pages)
+  if (action === "create_request") {
+    var rawPayload = e.parameter.payload;
+    var reqObj = {};
+    try {
+      reqObj = typeof rawPayload === "string" ? JSON.parse(rawPayload) : (rawPayload || {});
+    } catch(err) {
+      reqObj = e.parameter;
+    }
+    return handleCreateRequest(reqObj);
+  }
+
+  // 0.2 จัดการอัปเดตสถานะผ่าน GET
+  if (action === "update_status") {
+    var rawPayload = e.parameter.payload;
+    var reqObj = {};
+    try {
+      reqObj = typeof rawPayload === "string" ? JSON.parse(rawPayload) : (rawPayload || {});
+    } catch(err) {
+      reqObj = e.parameter;
+    }
+    return handleUpdateStatus(reqObj);
+  }
+
   // 0. ดึงรายชื่อผู้ใช้เดี่ยวๆ
   if (action === "get_users") {
     var userList = [];

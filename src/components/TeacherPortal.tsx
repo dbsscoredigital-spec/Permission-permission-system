@@ -80,10 +80,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [declineReason, setDeclineReason] = useState<string>('');
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const [substituteShareModalReq, setSubstituteShareModalReq] = useState<any | null>(null);
+  const [substituteScope, setSubstituteScope] = useState<'me' | 'all'>('me');
 
   const openLineShare = (req: Partial<ExitRequest>) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://dbsscoredigital-spec.github.io/Permission-permission-system';
-    const subAckUrl = `${origin}/?tab=teacher&subtab=substitute-tasks&reqId=${encodeURIComponent(req.id || '')}`;
+    let baseAppUrl = 'https://dbsscoredigital-spec.github.io/Permission-permission-system/';
+    if (typeof window !== 'undefined' && window.location) {
+      let rawHref = window.location.href.split('?')[0].split('#')[0];
+      rawHref = rawHref.replace(/\/index\.html$/i, '');
+      baseAppUrl = rawHref.endsWith('/') ? rawHref : `${rawHref}/`;
+    }
+    const subAckUrl = `${baseAppUrl}?action=substitute_ack&reqId=${encodeURIComponent(req.id || '')}`;
     const text = `🔔 ขอความอนุเคราะห์สอนแทน (วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์)
 เรียน: ${req.substituteTeacherName || 'ครูผู้สอนแทน'}
 จาก: ${req.userName || currentUser.name} (${req.branchName || currentUser.branchName})
@@ -153,12 +159,20 @@ ${subAckUrl}`;
   const approvedRequests = displayRequests.filter(r => r.status === 'approved');
   const rejectedRequests = displayRequests.filter(r => r.status === 'rejected');
 
-  // Substitute requests assigned to current user (matched by ID or Name)
+  // Total substitute requests across entire college
+  const allSubstituteRequestsInCollege = requests.filter(r => Boolean(r.hasClasses));
+  const allPendingSubstituteInCollege = allSubstituteRequestsInCollege.filter(r => r.substituteStatus === 'pending');
+
+  // Substitute requests assigned to current user (or all if scope is 'all' or user is admin)
   const substituteRequestsForMe = requests.filter(r => {
     if (!r.hasClasses) return false;
+    if (substituteScope === 'all' || currentUser.role === 'admin') return true;
     if (r.substituteTeacherId && r.substituteTeacherId === currentUser.id) return true;
     if (r.substituteTeacherName && norm(r.substituteTeacherName) === norm(currentUser.name)) return true;
     if (r.substituteTeacherName && cleanThaiName(r.substituteTeacherName) === cleanThaiName(currentUser.name)) return true;
+    const cleanSub = cleanThaiName(r.substituteTeacherName);
+    const cleanMe = cleanThaiName(currentUser.name);
+    if (cleanSub && cleanMe && (cleanSub.includes(cleanMe) || cleanMe.includes(cleanSub))) return true;
     return false;
   });
   const pendingSubstituteForMe = substituteRequestsForMe.filter(r => r.substituteStatus === 'pending');
@@ -1037,30 +1051,77 @@ ${subAckUrl}`;
                 <Handshake className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">
-                  รายการภาระงานสอนแทนที่มอบหมายถึงท่าน ({substituteRequestsForMe.length} รายการ)
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
+                  <span>รายการภาระงานสอนแทน ({substituteRequestsForMe.length} รายการ)</span>
+                  <span className="text-xs font-normal text-slate-500">
+                    {substituteScope === 'all' ? '(แสดงทั้งหมดในวิทยาลัย)' : `(เฉพาะที่ระบุถึง: ${currentUser.name})`}
+                  </span>
                 </h3>
                 <p className="text-slate-600 mt-0.5">
-                  เมื่อเพื่อนครูมีคาบสอนและขอออกนอกสถานศึกษา ท่านสามารถกดรับทราบในระบบนี้ได้ทันที (ไม่เสียโควต้า LINE 300 ครั้ง/ด.) เมื่อรับทราบแล้วระบบจะส่ง LINE ข้อความที่ 1 ให้หัวหน้าสาขา
+                  เมื่อเพื่อนครูมีคาบสอนและขอออกนอกสถานศึกษา ท่านสามารถกดรับทราบในระบบนี้ได้ทันที เมื่อรับทราบแล้วระบบจะส่ง LINE ข้อความที่ 1 ให้หัวหน้าสาขาพิจารณา
                 </p>
               </div>
             </div>
 
-            {pendingSubstituteForMe.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold text-xs shadow-xs shrink-0">
-                <AlertTriangle className="w-4 h-4" />
-                <span>รอท่านกดรับทราบ {pendingSubstituteForMe.length} รายการ</span>
-              </span>
-            )}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {/* Scope Switcher Pills */}
+              <div className="inline-flex items-center p-1 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setSubstituteScope('me')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    substituteScope === 'me'
+                      ? 'bg-amber-500 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  👤 มอบหมายถึงฉัน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubstituteScope('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    substituteScope === 'all'
+                      ? 'bg-amber-500 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🌐 ทั้งหมดในวิทยาลัย ({allSubstituteRequestsInCollege.length})
+                </button>
+              </div>
+
+              {pendingSubstituteForMe.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold text-xs shadow-xs shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>รอรับทราบ {pendingSubstituteForMe.length} รายการ</span>
+                </span>
+              )}
+            </div>
           </div>
 
           {substituteRequestsForMe.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-              <CheckSquare className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-sm font-semibold text-slate-700">ไม่มีภาระงานสอนแทนที่มอบหมายถึงท่านในขณะนี้</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                เมื่อมีเพื่อนครูระบุชื่อท่านเป็นครูผู้สอนแทน รายการจะแสดงขึ้นที่นี่โดยอัตโนมัติ
+            <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 space-y-3">
+              <CheckSquare className="w-12 h-12 text-slate-300 mx-auto mb-1" />
+              <h3 className="text-sm font-bold text-slate-700">
+                {substituteScope === 'me'
+                  ? `ไม่มีภาระงานสอนแทนที่มอบหมายถึงชื่อ "${currentUser.name}" ในขณะนี้`
+                  : 'ยังไม่มีคำขอออกนอกสถานศึกษาที่มีการขอสอนแทนในระบบ'}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                {substituteScope === 'me' && allSubstituteRequestsInCollege.length > 0
+                  ? `พบคำขอสอนแทนของครูท่านอื่นในวิทยาลัยทั้งหมด ${allSubstituteRequestsInCollege.length} รายการ หากท่านกำลังทดสอบระบบหรือเข้าสู่ระบบด้วยชื่ออื่น ท่านสามารถกดปุ่มด้านล่างเพื่อดูและกดรับทราบได้ทันที`
+                  : 'เมื่อมีเพื่อนครูระบุชื่อท่านเป็นครูผู้สอนแทน รายการจะแสดงขึ้นที่นี่โดยอัตโนมัติ'}
               </p>
+              {substituteScope === 'me' && allSubstituteRequestsInCollege.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSubstituteScope('all')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all"
+                >
+                  <Handshake className="w-4 h-4" />
+                  <span>👉 กดดูรายการสอนแทนทั้งหมดในวิทยาลัย ({allSubstituteRequestsInCollege.length} รายการ)</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

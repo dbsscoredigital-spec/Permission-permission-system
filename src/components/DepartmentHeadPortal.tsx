@@ -600,23 +600,26 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                       {req.hasClasses && req.substituteStatus === 'pending' ? (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-100/90 text-amber-900 border border-amber-300"
-                            title="ต้องรอครูผู้สอนแทนกดรับทราบในระบบเว็บก่อน ระบบจึงจะส่ง LINE แจ้งเตือนและเปิดให้อนุมัติ"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-100/90 text-amber-900 border border-amber-300"
+                            title="รอครูผู้สอนแทนกดรับทราบ"
                           >
                             <Clock className="w-3.5 h-3.5 text-amber-700 animate-spin" />
-                            <span>รอครูสอนแทนรับทราบ</span>
+                            <span>รอสอนแทน</span>
                           </span>
-                          {onAcknowledgeSubstitute && (
-                            <button
-                              type="button"
-                              onClick={() => onAcknowledgeSubstitute(req.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs transition-all cursor-pointer"
-                              title="กดยืนยันรับทราบแทนครูสอนแทน (กรณีประสานงานทางโทรศัพท์/วาจาแล้ว)"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              <span>รับทราบแทน</span>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (onAcknowledgeSubstitute) {
+                                await onAcknowledgeSubstitute(req.id);
+                              }
+                              handleApproveAction(req.id);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-500/30 transition-all cursor-pointer"
+                            title="อนุมัติคำขอทันที (ระบบจะบันทึกรับทราบภาระงานสอนแทนให้โดยอัตโนมัติ)"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>✅ อนุมัติ (รับทราบแทน)</span>
+                          </button>
                         </div>
                       ) : (
                         <button
@@ -1422,26 +1425,27 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 {selectedReq.hasClasses && selectedReq.substituteStatus === 'pending' ? (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5"
-                      title="ต้องรอให้ครูผู้สอนแทนกดรับทราบในระบบก่อน จึงจะสามารถอนุมัติได้"
+                      className="px-3 py-2 rounded-xl text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5"
+                      title="รอให้ครูผู้สอนแทนกดรับทราบ"
                     >
                       <Clock className="w-3.5 h-3.5 text-amber-700 animate-spin" />
-                      <span>รอครูผู้สอนแทน ({selectedReq.substituteTeacherName}) กดรับทราบ</span>
+                      <span>รอสอนแทน</span>
                     </span>
-                    {onAcknowledgeSubstitute && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          onAcknowledgeSubstitute(selectedReq.id);
-                          setSelectedReq(prev => prev ? { ...prev, substituteStatus: 'acknowledged', substituteAcknowledgedAt: new Date().toLocaleTimeString('th-TH') } : null);
-                        }}
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs transition-all cursor-pointer flex items-center gap-1"
-                        title="กดยืนยันรับทราบแทนครูสอนแทน (กรณีประสานงานทางโทรศัพท์/วาจาแล้ว)"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        <span>ยืนยันรับทราบแทน</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (onAcknowledgeSubstitute) {
+                          await onAcknowledgeSubstitute(selectedReq.id);
+                        }
+                        handleApproveAction(selectedReq.id);
+                        setSelectedReq(null);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/25 cursor-pointer flex items-center gap-1.5"
+                      title="อนุมัติคำขอทันที (ระบบจะบันทึกรับทราบภาระงานสอนแทนให้โดยอัตโนมัติ)"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>✅ อนุมัติ (รับทราบแทน)</span>
+                    </button>
                   </div>
                 ) : (
                   <button

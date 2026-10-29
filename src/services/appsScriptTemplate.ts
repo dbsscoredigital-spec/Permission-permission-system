@@ -425,6 +425,79 @@ function doGet(e) {
     return out;
   }
 
+  // 2.2 กดรับทราบภาระงานสอนแทนผ่านลิงก์ 1-Click (substitute_ack)
+  if (reqId && (action === "substitute_ack" || action === "sub_ack" || action === "substitute")) {
+    let logSheet = ss.getSheetByName("ApprovalLog");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("ApprovalLog");
+      logSheet.appendRow(["LogID", "RequestID", "ApproverName", "Action", "Timestamp", "Notes"]);
+    }
+
+    let matchedRow = -1;
+    let matchedReq = null;
+
+    for (let i = 1; i < data.length; i++) {
+      const cellId = String(data[i][0] || "").trim().toUpperCase();
+      if (cellId === reqId.toUpperCase()) {
+        matchedRow = i + 1;
+        matchedReq = {
+          id: data[i][0],
+          submittedAt: data[i][1],
+          userName: data[i][2],
+          branchName: data[i][3],
+          exitDate: data[i][4],
+          exitTime: data[i][5],
+          returnTime: data[i][6],
+          destination: data[i][7],
+          reason: data[i][8],
+          assignedApproverName: data[i][9],
+          status: data[i][10],
+          hasClasses: true,
+          substituteTeacherName: data[i][16] || "ครูผู้สอนแทน",
+          substituteSubject: data[i][17] || "",
+          substituteStatus: "acknowledged"
+        };
+        break;
+      }
+    }
+
+    const now = new Date();
+    if (matchedRow > 0) {
+      // คอลัมน์ 19: สถานะสอนแทน
+      reqSheet.getRange(matchedRow, 19).setValue("acknowledged");
+
+      logSheet.appendRow([
+        "LOG-" + now.getTime(),
+        reqId,
+        matchedReq ? matchedReq.substituteTeacherName : "ครูผู้สอนแทน",
+        "substitute_ack",
+        now,
+        "ครูผู้สอนแทนกดรับทราบภาระงานสอนแทนผ่านลิงก์ 1-Click สำเร็จ ส่งต่อให้หัวหน้าสาขา"
+      ]);
+
+      // ส่ง LINE Flex Message ข้อความที่ 1 ให้หัวหน้าสาขาทันที!
+      if (matchedReq) {
+        sendLineFlexMessageToApprover(matchedReq);
+      }
+    }
+
+    const teacherName = matchedReq ? matchedReq.userName : "-";
+    const subTeacherName = matchedReq ? matchedReq.substituteTeacherName : "ครูผู้สอนแทน";
+    const subSubject = matchedReq ? (matchedReq.substituteSubject || "ภาระงานสอนประจำวัน") : "-";
+    const branchName = matchedReq ? matchedReq.branchName : "-";
+    const timeRange = matchedReq ? (matchedReq.exitTime + " – " + matchedReq.returnTime + " น.") : "-";
+    const dateStr = matchedReq ? matchedReq.exitDate : "-";
+
+    const subHtmlContent = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>รับทราบภาระงานสอนแทนเรียบร้อยแล้ว</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Prompt",sans-serif;background:#fffbeb;padding:24px 16px;text-align:center;color:#0f172a}.card{max-width:440px;margin:16px auto;background:#ffffff;border-radius:28px;padding:32px 22px;box-shadow:0 12px 36px -8px rgba(0,0,0,0.08);border:2px solid #fde68a}.icon-box{width:76px;height:76px;border-radius:24px;background:#fef3c7;color:#d97706;font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-weight:900}.title{font-size:21px;font-weight:800;color:#92400e;margin-bottom:6px}.req-badge{display:inline-block;padding:5px 16px;background:#f1f5f9;border-radius:999px;font-size:12px;font-weight:700;color:#334155;margin-bottom:18px}.detail-box{background:#f8fafc;border-radius:20px;padding:16px;font-size:13px;text-align:left;line-height:1.8;border:1px solid #e2e8f0;margin-bottom:20px}.row{display:flex;justify-content:space-between;border-bottom:1px dashed #e2e8f0;padding:4px 0}.row:last-child{border-bottom:none}.lbl{color:#64748b}.val{font-weight:700;color:#0f172a;text-align:right}.success-desc{font-size:12px;color:#15803d;background:#dcfce7;border:1px solid #86efac;border-radius:14px;padding:12px 14px;margin-bottom:20px;line-height:1.6;text-align:left}.btn-group{display:flex;flex-direction:column;gap:10px}.close-btn{display:block;width:100%;padding:14px;background:#16a34a;color:#ffffff;border-radius:18px;font-weight:700;border:none;font-size:14px;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.25)}.web-btn{display:block;width:100%;padding:13px;background:#ffffff;color:#0f172a;border-radius:18px;font-weight:700;border:1.5px solid #cbd5e1;font-size:13px;text-decoration:none;box-sizing:border-box}</style></head><body><div class="card"><div class="icon-box">✓</div><div class="title">บันทึกรับทราบสอนแทนสำเร็จ</div><div class="req-badge">รหัสคำขอ: ' + reqId + '</div><div class="detail-box"><div class="row"><span class="lbl">ครูผู้ขอออก:</span><span class="val">' + teacherName + ' (' + branchName + ')</span></div><div class="row"><span class="lbl">ครูผู้สอนแทน:</span><span class="val">' + subTeacherName + '</span></div><div class="row"><span class="lbl">วิชาสอนแทน:</span><span class="val" style="color:#d97706">' + subSubject + '</span></div><div class="row"><span class="lbl">วัน-เวลา:</span><span class="val">' + dateStr + ' (' + timeRange + ')</span></div><div class="row"><span class="lbl">สถานะสอนแทน:</span><span class="val" style="color:#16a34a;font-weight:800">รับทราบแล้ว (Acknowledged)</span></div></div><div class="success-desc">✓ ระบบได้บันทึกการรับทราบภาระงานสอนแทนของท่านเรียบร้อยแล้ว<br>✓ ส่ง LINE Flex Message ข้อความที่ 1 แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปเรียบร้อยแล้วครับ</div><div class="btn-group"><button type="button" class="close-btn" onclick="window.close();">✓ ปิดหน้านี้และกลับสู่ LINE</button><a href="https://dbsscoredigital-spec.github.io/Permission-permission-system/" target="_blank" class="web-btn">🌐 เปิดเข้าระบบหลัก Web App</a></div></div></body></html>';
+    const subOut = HtmlService.createHtmlOutput(subHtmlContent);
+    try {
+      if (HtmlService && HtmlService.XFrameOptionsMode && HtmlService.XFrameOptionsMode.ALLOWALL) {
+        subOut.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      }
+    } catch (e) {}
+    return subOut;
+  }
+
   // 3. ตรวจสอบข้อมูลคำขอรายรายการตาม reqId หรือ qrToken
   for (let i = 1; i < data.length; i++) {
     const row = data[i];

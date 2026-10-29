@@ -953,54 +953,128 @@ function getSettingValue(key) {
   return "";
 }
 
+// รายชื่อ LINE User ID สำรองของครูและบุคลากรวิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์ (ป้องกันกรณีชีต Users ว่าง)
+var KNOWN_LINE_MAP = {
+  "นายศรายุทธ สมสุข": "U81778d734346f14e047e07cb37d1ccd1",
+  "นายเอกราช อาจณรงค์": "Uedc4422b785b7a8d1f6c85ae2eb950cf",
+  "นายคัมภีร์ ช่วยเพชร": "U759b2ec7a4eee7f1c4565b9a7a8194e2",
+  "นายสุมัณฑิต ทิพย์มนตรี": "U9474d32fb566bbfafc743b4511d46f9d",
+  "นายวรวิทย์ บุญณะ": "Ucd11f927fb0627c5608f49d0e202ceaa",
+  "นายปิยะพงษ์ รอดนาโพธิ์": "U9db6d7c3b5ba1c5edc4fdb395950bb01",
+  "นายทิวากร สามิภักดิ์": "U6e2636be42c9019262e42e4312a687f9",
+  "นายสัจจะ วิชัยดิษฐ": "Uf042efd3a0406969f203957b4bd82221",
+  "นายชนะ กฤตานุพงศ์": "U0b18dbb4273993baeaf37b5d8f73e825",
+  "นางนฤมล เรืองพุฒ": "U013dfdf06ab0c66db7d898540077d80e",
+  "นายฉัตรชัย ดิษฐาน": "U00d0bcb58a525b4a9e29999ddd8c8246",
+  "นายนคร คมขำ": "U5352fa5b7afe5b8dab92939e56540bb9",
+  "นายภูมเรศ จันทร์แจ่มศรี": "U600d38ae7a9d217129d1221da32f061d",
+  "นายศักดิ์สิริ นิลเอก": "U2529aae8c76082a8840d01549220f589",
+  "นางสาวพุทธชาติ จันทลิลา": "Ue74d275282ab6b5d5c5264188503631d",
+  "นางสาวอรอนงค์ ขุนทองแก้ว": "U84c5267a9feee6f8968d324a3c79c4af",
+  "นางสาวศรีไพร ดวงภักดี": "U2723eb7c83ee781baf5c3c3e5bac47c1",
+  "นางสาวศรัญญา พร้อมประเสริฐ": "U38934e344a242b1a8a7741c7ff043895",
+  "นางสาววิลาวัณย์ หนูแก้ว": "U606b5325d901952b8d055d1ce9f9c921",
+  "นางสาววลัยลักษณ์ ทองสาร": "U7504116d33dd060660c97ffd0ab614e7",
+  "นางสาวดวงชนก สดภิบาล": "U31c5482900420051ca5ef62a94694cc0",
+  "นายวิบูลย์ศักดิ์ วงษ์แหวน": "U1815d934070b4927ddb7088c5e176aff",
+  "นางเสาวณี ชุมศรี": "U35fa00096ca7f74fce5d0ce9feccacb1",
+  "นางกนกวรรณ ธนาพล": "U0b1a90a74dacb8fbb2be07d19189932c",
+  "นางศรัญญา กลการ": "Ube1f1d0c57321a5d20f5ee53149c9f76",
+  "นางอันธิกา ชายแก้ว": "U560ee7aecc0b9f8b3a22566956f39eac",
+  "นายกนกศักดิ์ บุญไทย": "U6ff07b616d038bc78b1a6602cb0a4120",
+  "usr-import-85622": "U81778d734346f14e047e07cb37d1ccd1",
+  "usr-import-85625": "Uedc4422b785b7a8d1f6c85ae2eb950cf",
+  "7777": "Uedc4422b785b7a8d1f6c85ae2eb950cf",
+  "8888": "U81778d734346f14e047e07cb37d1ccd1",
+  "admin": "U81778d734346f14e047e07cb37d1ccd1"
+};
+
 // Helper: ดึง LINE ID ของหัวหน้าสาขา
 function getApproverLineId(branchId) {
+  var bQuery = String(branchId || "").trim().toLowerCase();
+  if (bQuery === "db" || bQuery.indexOf("ธุรกิจ") !== -1 || bQuery.indexOf("ดิจิทัล") !== -1) {
+    return "U81778d734346f14e047e07cb37d1ccd1"; // นายศรายุทธ สมสุข
+  }
+  if (bQuery === "me" || bQuery.indexOf("กล") !== -1) {
+    return "U759b2ec7a4eee7f1c4565b9a7a8194e2"; // นายคัมภีร์ ช่วยเพชร
+  }
+  if (bQuery === "ac" || bQuery.indexOf("บัญชี") !== -1) {
+    return "U84c5267a9feee6f8968d324a3c79c4af"; // นางสาวอรอนงค์ ขุนทองแก้ว
+  }
+  if (bQuery === "el" || bQuery.indexOf("ไฟฟ้า") !== -1) {
+    return "U013dfdf06ab0c66db7d898540077d80e"; // นางนฤมล เรืองพุฒ
+  }
+  if (bQuery === "at" || bQuery.indexOf("ยนต์") !== -1) {
+    return "U00d0bcb58a525b4a9e29999ddd8c8246"; // นายฉัตรชัย ดิษฐาน
+  }
+  if (bQuery === "gen" || bQuery.indexOf("สามัญ") !== -1) {
+    return "U0b1a90a74dacb8fbb2be07d19189932c"; // นางกนกวรรณ ธนาพล
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const bSheet = ss.getSheetByName("Branches");
   const uSheet = ss.getSheetByName("Users");
-  if (!bSheet || !uSheet) return "";
-
-  const bData = bSheet.getDataRange().getValues();
-  let approverUserId = "";
-  const bQuery = String(branchId || "").trim().toLowerCase();
-  for (let i = 1; i < bData.length; i++) {
-    const bId = String(bData[i][0] || "").trim().toLowerCase();
-    const bName = String(bData[i][1] || "").trim().toLowerCase();
-    if (bId === bQuery || bName === bQuery || bName.indexOf(bQuery) !== -1) {
-      approverUserId = bData[i][2];
-      break;
+  if (bSheet && uSheet) {
+    const bData = bSheet.getDataRange().getValues();
+    let approverUserId = "";
+    for (let i = 1; i < bData.length; i++) {
+      const bId = String(bData[i][0] || "").trim().toLowerCase();
+      const bName = String(bData[i][1] || "").trim().toLowerCase();
+      if (bId === bQuery || bName === bQuery || bName.indexOf(bQuery) !== -1) {
+        approverUserId = bData[i][2];
+        break;
+      }
+    }
+    if (approverUserId) {
+      const uData = uSheet.getDataRange().getValues();
+      const uQuery = String(approverUserId || "").trim().toLowerCase();
+      for (let j = 1; j < uData.length; j++) {
+        const rowId = String(uData[j][0] || "").trim().toLowerCase();
+        const rowName = String(uData[j][3] || "").trim().toLowerCase();
+        if (rowId === uQuery || (uQuery.length > 3 && rowName.indexOf(uQuery) !== -1)) {
+          var foundLineId = String(uData[j][6] || "").trim();
+          if (foundLineId && foundLineId.indexOf("U") === 0 && foundLineId.indexOf("U_") !== 0) {
+            return foundLineId;
+          }
+        }
+      }
     }
   }
 
-  if (!approverUserId) return "";
-
-  const uData = uSheet.getDataRange().getValues();
-  const uQuery = String(approverUserId || "").trim().toLowerCase();
-  for (let j = 1; j < uData.length; j++) {
-    const rowId = String(uData[j][0] || "").trim().toLowerCase();
-    const rowName = String(uData[j][3] || "").trim().toLowerCase();
-    if (rowId === uQuery || (uQuery.length > 3 && rowName.indexOf(uQuery) !== -1)) {
-      return uData[j][6]; // LINE_ID
-    }
-  }
-  return "";
+  return "U81778d734346f14e047e07cb37d1ccd1"; // Fallback to นายศรายุทธ สมสุข
 }
 
 // Helper: ดึง LINE ID ของผู้ใช้
 function getUserLineId(userId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const uSheet = ss.getSheetByName("Users");
-  if (!uSheet) return "";
-  const uData = uSheet.getDataRange().getValues();
-  const query = String(userId || "").replace(/\\s+/g, ' ').trim().toLowerCase();
-  for (let i = 1; i < uData.length; i++) {
-    const rowId = String(uData[i][0] || "").trim().toLowerCase();
-    const rowUsername = String(uData[i][1] || "").trim().toLowerCase();
-    const rowName = String(uData[i][3] || "").replace(/\\s+/g, ' ').trim().toLowerCase();
-    if (rowId === query || rowUsername === query || (query.length > 2 && (rowName === query || rowName.indexOf(query) !== -1 || query.indexOf(rowName) !== -1))) {
-      return String(uData[i][6] || "").trim();
+  var raw = String(userId || "").trim();
+  if (!raw) return "";
+
+  // 1. Direct check in known map
+  for (var k in KNOWN_LINE_MAP) {
+    if (raw === k || raw.indexOf(k) !== -1 || k.indexOf(raw) !== -1) {
+      return KNOWN_LINE_MAP[k];
     }
   }
+
+  // 2. Check Users sheet
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const uSheet = ss.getSheetByName("Users");
+  if (uSheet && uSheet.getLastRow() > 1) {
+    const uData = uSheet.getDataRange().getValues();
+    const query = raw.replace(/\\s+/g, ' ').toLowerCase();
+    for (let i = 1; i < uData.length; i++) {
+      const rowId = String(uData[i][0] || "").trim().toLowerCase();
+      const rowUsername = String(uData[i][1] || "").trim().toLowerCase();
+      const rowName = String(uData[i][3] || "").replace(/\\s+/g, ' ').trim().toLowerCase();
+      if (rowId === query || rowUsername === query || (query.length > 2 && (rowName === query || rowName.indexOf(query) !== -1 || query.indexOf(rowName) !== -1))) {
+        var lId = String(uData[i][6] || "").trim();
+        if (lId && lId.indexOf("U") === 0 && lId.indexOf("U_") !== 0) {
+          return lId;
+        }
+      }
+    }
+  }
+
   return "";
 }
 `;

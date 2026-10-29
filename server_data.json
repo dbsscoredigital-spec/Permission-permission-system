@@ -1,6 +1,66 @@
 {
   "requests": [
     {
+      "id": "REQ-20261028-881",
+      "submittedAt": "2569-10-28T09:37:00.000Z",
+      "userName": "นายเอกราช อาจณรงค์",
+      "branchName": "ธุรกิจดิจิทัล",
+      "exitDate": "2026-10-27T17:00:00.000Z",
+      "exitTime": "1899-12-30T03:47:56.000Z",
+      "returnTime": "1899-12-30T05:17:56.000Z",
+      "destination": "jliliol",
+      "reason": "l.l.l.l.l",
+      "approver": "หัวหน้าสาขา",
+      "status": "pending",
+      "notes": "",
+      "travelMethod": "ตามภารกิจราชการ",
+      "qrToken": "SECURE-EXIT-REQ-20261028-881-DB-801ST6",
+      "branchId": "ME",
+      "position": "ครูผู้สอน",
+      "assignedApproverName": "หัวหน้าสาขา",
+      "substituteStatus": "not_required"
+    },
+    {
+      "id": "REQ-20261028-641",
+      "submittedAt": "2569-10-28T09:37:00.000Z",
+      "userName": "นายเอกราช อาจณรงค์",
+      "branchName": "ธุรกิจดิจิทัล",
+      "exitDate": "2026-10-27T17:00:00.000Z",
+      "exitTime": "1899-12-30T03:47:56.000Z",
+      "returnTime": "1899-12-30T05:17:56.000Z",
+      "destination": "ัาีรสารสรา",
+      "reason": "นสใรใร",
+      "approver": "หัวหน้าสาขา",
+      "status": "pending",
+      "notes": "",
+      "travelMethod": "ตามภารกิจราชการ",
+      "qrToken": "SECURE-EXIT-REQ-20261028-641-DB-3T6PX2",
+      "branchId": "ME",
+      "position": "ครูผู้สอน",
+      "assignedApproverName": "หัวหน้าสาขา",
+      "substituteStatus": "not_required"
+    },
+    {
+      "id": "REQ-20261028-599",
+      "submittedAt": "2569-10-28T09:36:00.000Z",
+      "userName": "นายเอกราช อาจณรงค์",
+      "branchName": "ธุรกิจดิจิทัล",
+      "exitDate": "2026-10-27T17:00:00.000Z",
+      "exitTime": "1899-12-30T03:47:56.000Z",
+      "returnTime": "1899-12-30T05:17:56.000Z",
+      "destination": "ด้่ีัารีารส",
+      "reason": "รสรนสรน",
+      "approver": "หัวหน้าสาขา",
+      "status": "pending",
+      "notes": "",
+      "travelMethod": "ตามภารกิจราชการ",
+      "qrToken": "SECURE-EXIT-REQ-20261028-599-DB-2PRJ1B",
+      "branchId": "ME",
+      "position": "ครูผู้สอน",
+      "assignedApproverName": "หัวหน้าสาขา",
+      "substituteStatus": "not_required"
+    },
+    {
       "id": "REQ-TEST-1793178113537",
       "userId": "usr-imported-REQ-TEST-1793178113537",
       "userName": "ทดสอบ",
@@ -47,12 +107,14 @@
       "travelMethod": "ตามภารกิจราชการ",
       "assignedApproverId": "usr-import-85622",
       "assignedApproverName": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
-      "status": "pending",
+      "status": "approved",
       "qrToken": "SECURE-EXIT-REQ-20261028-400-DB-YMHNWG",
       "hasClasses": false,
       "substituteStatus": "not_required",
       "approver": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
-      "notes": ""
+      "notes": "",
+      "approvedAt": "2569-10-28 10:01",
+      "approvedBy": "นายศรายุทธ สมสุข (หัวหน้าสาขาธุรกิจดิจิทัล)"
     },
     {
       "id": "REQ-20261028-244",
@@ -221,7 +283,19 @@
       "substituteStatus": "not_required"
     }
   ],
-  "logs": [],
+  "logs": [
+    {
+      "id": "LOG-1793181706946",
+      "requestId": "REQ-20261028-400",
+      "requestSummary": "นายเอกราช อาจณรงค์ (ธุรกิจดิจิทัล) ขอออกไป yykjujk",
+      "actorId": "approver",
+      "actorName": "นายศรายุทธ สมสุข (หัวหน้าสาขาธุรกิจดิจิทัล)",
+      "actorRole": "ผู้อนุมัติ",
+      "action": "approve",
+      "timestamp": "2569-10-28 10:01",
+      "comment": "อนุมัติคำขอเรียบร้อยแล้ว"
+    }
+  ],
   "users": [
     {
       "id": "usr-915068",

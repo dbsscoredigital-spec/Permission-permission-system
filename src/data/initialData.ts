@@ -76,7 +76,7 @@ export const INITIAL_USERS: User[] = [
     "branchId": "DB",
     "branchName": "ธุรกิจดิจิทัล",
     "position": "ผู้ดูแลระบบ / รองผู้อำนวยการ",
-    "lineId": "U_ADMIN_CENTRAL"
+    "lineId": "U81778d734346f14e047e07cb37d1ccd1"
   },
   {
     "id": "usr-import-68031",

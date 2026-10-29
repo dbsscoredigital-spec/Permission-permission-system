@@ -337,17 +337,30 @@ export class LineService {
     // Find approver's LINE ID
     const storage = StorageService.getInstance();
     let approverLineId = req.assignedApproverLineId;
-    if (!approverLineId) {
+    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
       const users = storage.getUsers();
       const approverUser = users.find(u => u.id === req.assignedApproverId || (u.branchId === req.branchId && u.role === 'approver'));
       approverLineId = approverUser?.lineId;
     }
 
-    if (!approverLineId || !approverLineId.trim().startsWith('U')) {
-      return {
-        success: false,
-        message: `บันทึกคำขอแล้ว แต่หัวหน้าสาขา (${req.assignedApproverName}) ยังไม่ได้ระบุ LINE User ID ในข้อมูลผู้ใช้`
-      };
+    // Branch-based guarantee for approver
+    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
+      const b = (req.branchId || req.branchName || '').toLowerCase();
+      if (b === 'db' || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
+        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // นายศรายุทธ สมสุข
+      } else if (b === 'me' || b.includes('กล')) {
+        approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2'; // นายคัมภีร์ ช่วยเพชร
+      } else if (b === 'ac' || b.includes('บัญชี')) {
+        approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af'; // นางสาวอรอนงค์ ขุนทองแก้ว
+      } else if (b === 'el' || b.includes('ไฟฟ้า')) {
+        approverLineId = 'U013dfdf06ab0c66db7d898540077d80e'; // นางนฤมล เรืองพุฒ
+      } else if (b === 'at' || b.includes('ยนต์')) {
+        approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246'; // นายฉัตรชัย ดิษฐาน
+      } else if (b === 'gen' || b.includes('สามัญ')) {
+        approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c'; // นางกนกวรรณ ธนาพล
+      } else {
+        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // Fallback to นายศรายุทธ สมสุข
+      }
     }
 
     // Send ONLY the Flex message (no trailing text message)
@@ -410,12 +423,53 @@ export class LineService {
         (req.userName && norm(u.name) === norm(req.userName)) ||
         ((req as any).userUsername && u.username === (req as any).userUsername)
       );
-      if (teacherUser?.lineId && teacherUser.lineId.trim().startsWith('U')) {
+      if (teacherUser?.lineId && teacherUser.lineId.trim().startsWith('U') && !teacherUser.lineId.startsWith('U_')) {
         teacherLineId = teacherUser.lineId.trim();
       }
     }
 
-    if (teacherLineId && teacherLineId.trim().startsWith('U')) {
+    // Direct fallback for known teachers by name or username
+    if (!teacherLineId || !teacherLineId.trim().startsWith('U') || teacherLineId.startsWith('U_')) {
+      const uName = (req.userName || '').replace(/\s+/g, ' ').trim();
+      const KNOWN_MAP: Record<string, string> = {
+        'นายเอกราช อาจณรงค์': 'Uedc4422b785b7a8d1f6c85ae2eb950cf',
+        'นายศรายุทธ สมสุข': 'U81778d734346f14e047e07cb37d1ccd1',
+        'นายคัมภีร์ ช่วยเพชร': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
+        'นายสุมัณฑิต ทิพย์มนตรี': 'U9474d32fb566bbfafc743b4511d46f9d',
+        'นายวรวิทย์ บุญณะ': 'Ucd11f927fb0627c5608f49d0e202ceaa',
+        'นายปิยะพงษ์ รอดนาโพธิ์': 'U9db6d7c3b5ba1c5edc4fdb395950bb01',
+        'นายทิวากร สามิภักดิ์': 'U6e2636be42c9019262e42e4312a687f9',
+        'นายสัจจะ วิชัยดิษฐ': 'Uf042efd3a0406969f203957b4bd82221',
+        'นายชนะ กฤตานุพงศ์': 'U0b18dbb4273993baeaf37b5d8f73e825',
+        'นางนฤมล เรืองพุฒ': 'U013dfdf06ab0c66db7d898540077d80e',
+        'นายฉัตรชัย ดิษฐาน': 'U00d0bcb58a525b4a9e29999ddd8c8246',
+        'นายนคร คมขำ': 'U5352fa5b7afe5b8dab92939e56540bb9',
+        'นายภูมเรศ จันทร์แจ่มศรี': 'U600d38ae7a9d217129d1221da32f061d',
+        'นายศักดิ์สิริ นิลเอก': 'U2529aae8c76082a8840d01549220f589',
+        'นางสาวพุทธชาติ จันทลิลา': 'Ue74d275282ab6b5d5c5264188503631d',
+        'นางสาวอรอนงค์ ขุนทองแก้ว': 'U84c5267a9feee6f8968d324a3c79c4af',
+        'นางสาวศรีไพร ดวงภักดี': 'U2723eb7c83ee781baf5c3c3e5bac47c1',
+        'นางสาวศรัญญา พร้อมประเสริฐ': 'U38934e344a242b1a8a7741c7ff043895',
+        'นางสาววิลาวัณย์ หนูแก้ว': 'U606b5325d901952b8d055d1ce9f9c921',
+        'นางสาววลัยลักษณ์ ทองสาร': 'U7504116d33dd060660c97ffd0ab614e7',
+        'นางสาวดวงชนก สดภิบาล': 'U31c5482900420051ca5ef62a94694cc0',
+        'นายวิบูลย์ศักดิ์ วงษ์แหวน': 'U1815d934070b4927ddb7088c5e176aff',
+        'นางเสาวณี ชุมศรี': 'U35fa00096ca7f74fce5d0ce9feccacb1',
+        'นางกนกวรรณ ธนาพล': 'U0b1a90a74dacb8fbb2be07d19189932c',
+        'นางศรัญญา กลการ': 'Ube1f1d0c57321a5d20f5ee53149c9f76',
+        'นางอันธิกา ชายแก้ว': 'U560ee7aecc0b9f8b3a22566956f39eac',
+        'นายกนกศักดิ์ บุญไทย': 'U6ff07b616d038bc78b1a6602cb0a4120',
+        '7777': 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
+      };
+      for (const k of Object.keys(KNOWN_MAP)) {
+        if (uName.includes(k) || k.includes(uName)) {
+          teacherLineId = KNOWN_MAP[k];
+          break;
+        }
+      }
+    }
+
+    if (teacherLineId && teacherLineId.trim().startsWith('U') && !teacherLineId.startsWith('U_')) {
       const flexStatusPayload = this.generateTeacherStatusFlexPayload(req, status, approverName, rejectionReason);
       return await this.pushToLineBackend(teacherLineId, [flexStatusPayload]);
     }

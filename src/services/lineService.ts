@@ -6,6 +6,8 @@ const LINE_MESSAGES_KEY = 'exit_app_line_messages_v4';
 
 export class LineService {
   private static instance: LineService;
+  private sentApproverCache: Set<string> = new Set();
+  private sentTeacherCache: Set<string> = new Set();
 
   private constructor() {
     this.initIfEmpty();
@@ -137,11 +139,11 @@ export class LineService {
         // Expected when running on static hosts like GitHub Pages where /api/line/push doesn't exist
       }
 
-      // 2. Fallback for GitHub Pages static sites: Dispatch directly through Google Apps Script Web App
+      // 2. Fallback for GitHub Pages static sites: Dispatch directly through Google Apps Script Web App (ส่งเพียง 1 ครั้งเท่านั้น)
       const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
       if (gasUrl && gasUrl.startsWith('http')) {
         try {
-          // POST to Google Apps Script
+          // POST to Google Apps Script - ส่งเพียง 1 ครั้ง ไม่ส่งเบิ้ล
           fetch(gasUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -154,18 +156,6 @@ export class LineService {
                 messages
               }
             })
-          }).catch(() => {});
-
-          // GET fallback to Google Apps Script (reliably handled in Google cloud)
-          const getParams = new URLSearchParams({
-            action: 'push_line',
-            to: to.trim(),
-            token: token.trim(),
-            messages: JSON.stringify(messages)
-          });
-          fetch(`${gasUrl}?${getParams.toString()}`, {
-            method: 'GET',
-            mode: 'no-cors'
           }).catch(() => {});
 
           return {
@@ -313,6 +303,12 @@ export class LineService {
    * Also attempts real push if approver has a configured lineId
    */
   public async sendApproverNotification(req: ExitRequest): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
+    // กฎเหล็ก: คำขอ 1 รายการ ส่ง Flex ให้หัวหน้าเพียง 1 ครั้งเท่านั้น ป้องกันการส่งเบิ้ล 100%
+    if (this.sentApproverCache.has(req.id)) {
+      return { success: true, message: 'ส่งการแจ้งเตือนไปยังหัวหน้าเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
+    }
+    this.sentApproverCache.add(req.id);
+
     const msgs = this.getMessages();
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -377,6 +373,13 @@ export class LineService {
     approverName: string,
     rejectionReason?: string
   ): Promise<{ success: boolean; message: string; details?: any }> {
+    // กฎเหล็ก: คำขอ 1 รายการ ส่ง Flex ผลการพิจารณาให้ครูผู้ขอเพียง 1 ครั้งเท่านั้น ป้องกันการส่งเบิ้ล 100%
+    const statusKey = `${req.id}_${status}`;
+    if (this.sentTeacherCache.has(statusKey)) {
+      return { success: true, message: 'ส่งการแจ้งเตือนผลให้ครูผู้ขอเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
+    }
+    this.sentTeacherCache.add(statusKey);
+
     const msgs = this.getMessages();
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;

@@ -101,6 +101,23 @@ function doPost(e) {
       var pushToken = String(pushPayload.token || "").trim() || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
       var pushTo = String(pushPayload.to || "").trim();
       var pushMsgs = pushPayload.messages || [];
+
+      // ป้องกันการส่ง Flex ซ้ำซ้อน (ตรวจจับจาก reqId หรือ altText)
+      var pReqId = String(pushPayload.reqId || "").trim();
+      if (!pReqId && pushMsgs.length > 0) {
+        var mMatch = String(pushMsgs[0].altText || "").match(/REQ-\d+-\d+/i);
+        if (mMatch) pReqId = mMatch[0];
+      }
+      if (pReqId) {
+        var scriptCache = CacheService.getScriptCache();
+        var cachePushKey = "lock_push_post_" + pReqId + "_" + pushTo;
+        if (scriptCache && scriptCache.get(cachePushKey)) {
+          return ContentService.createTextOutput(JSON.stringify({ status: "success", skippedDuplicate: true }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+        if (scriptCache) scriptCache.put(cachePushKey, "sent", 900);
+      }
+
       if (pushTo && pushMsgs.length > 0) {
         var resp = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
           method: "post",
@@ -195,6 +212,22 @@ function doGet(e) {
     try {
       msgs = JSON.parse(p.messages || p.payload || "[]");
     } catch(err) {}
+
+    // ป้องกันการส่ง Flex ซ้ำซ้อน
+    var pReqId = String(p.reqId || p.requestId || "").trim();
+    if (!pReqId && msgs.length > 0) {
+      var mMatch = String(msgs[0].altText || "").match(/REQ-\d+-\d+/i);
+      if (mMatch) pReqId = mMatch[0];
+    }
+    if (pReqId) {
+      var scriptCache = CacheService.getScriptCache();
+      var cachePushKey = "lock_push_get_" + pReqId + "_" + pushTo;
+      if (scriptCache && scriptCache.get(cachePushKey)) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "success", skippedDuplicate: true })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (scriptCache) scriptCache.put(cachePushKey, "sent", 900);
+    }
+
     if (pushTo && msgs.length > 0) {
       var resp = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
         method: "post",
@@ -547,6 +580,23 @@ function handleCreateRequest(req) {
   const reqSheet = ss.getSheetByName("Requests");
   const logSheet = ss.getSheetByName("ApprovalLog");
 
+  const reqId = String(req && req.id || "").trim();
+  if (!reqId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Missing request id" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // ป้องกันการบันทึกซ้ำซ้อน: หากมีคำขอนี้ในระบบแล้ว ให้ข้ามทันที ไม่สร้างแถวซ้ำและไม่ส่ง Flex เบิ้ล
+  if (reqSheet && reqSheet.getLastRow() > 1) {
+    const existingRows = reqSheet.getDataRange().getValues();
+    for (let r = 1; r < existingRows.length; r++) {
+      if (String(existingRows[r][0] || "").trim() === reqId) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: reqId, duplicate: true }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+  }
+
   // บันทึกลง Requests Sheet
   reqSheet.appendRow([
     req.id,
@@ -669,8 +719,22 @@ function handleDeleteRequest(payload) {
 }
 
 // 3. ส่ง LINE Flex Message ข้อความที่ 1/2 ให้หัวหน้าสาขา
-// (นโยบายประหยัดโควต้า 300 ข้อความ/เดือน: ครูสอนแทนกดรับทราบในเว็บ 100% ไม่ส่ง LINE หาครูสอนแทน)
+// (นโยบายประหยัดโควต้า: คำขอ 1 ครั้ง ส่ง Flex แจ้งเตือนหาหัวหน้าเพียง 1 ข้อความเท่านั้น)
 function sendLineFlexMessageToApprover(req) {
+  const reqId = String(req && req.id || "").trim();
+  if (!reqId) return;
+
+  // กฎเหล็ก: ป้องกันการส่ง Flex ซ้ำให้หัวหน้าเด็ดขาด (ตรวจ Cache และ Lock 15 นาที)
+  const scriptCache = CacheService.getScriptCache();
+  const cacheKey = "lock_approver_flex_" + reqId;
+  if (scriptCache && scriptCache.get(cacheKey)) {
+    Logger.log("Approver Flex already sent for " + reqId + ", skipping duplicate.");
+    return;
+  }
+  if (scriptCache) {
+    scriptCache.put(cacheKey, "sent", 900);
+  }
+
   const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
@@ -786,6 +850,20 @@ function sendLineFlexMessageToApprover(req) {
 
 // 4. ส่งข้อความแจ้งเตือนผลกลับไปยังครูผู้ขอ (LINE Flex Message)
 function sendLineNotificationToTeacher(req) {
+  const reqId = String(req && req.id || "").trim();
+  if (!reqId) return;
+
+  // กฎเหล็ก: ป้องกันการส่ง Flex ซ้ำให้ครูผู้ขอเด็ดขาด (ตรวจ Cache และ Lock 15 นาที)
+  const scriptCache = CacheService.getScriptCache();
+  const cacheKey = "lock_teacher_flex_" + reqId + "_" + String(req.status || "").trim();
+  if (scriptCache && scriptCache.get(cacheKey)) {
+    Logger.log("Teacher Flex already sent for " + reqId + ", skipping duplicate.");
+    return;
+  }
+  if (scriptCache) {
+    scriptCache.put(cacheKey, "sent", 900);
+  }
+
   const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 

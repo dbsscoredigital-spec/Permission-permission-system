@@ -1050,19 +1050,12 @@ export class StorageService {
       return;
     }
     try {
-      // 1. POST
+      // ส่งเพียง 1 ครั้งผ่าน POST (no-cors) ไปยัง Google Apps Script เพื่อป้องกันข้อความซ้ำซ้อน
       fetch(settings.googleAppsScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         mode: 'no-cors',
         body: JSON.stringify({ action, payload, timestamp: new Date().toISOString() })
-      }).catch(() => {});
-
-      // 2. GET fallback (Reliable execution in Google cloud from any domain)
-      const getUrl = `${settings.googleAppsScriptUrl}?action=${encodeURIComponent(action)}&payload=${encodeURIComponent(JSON.stringify(payload))}`;
-      fetch(getUrl, {
-        method: 'GET',
-        mode: 'no-cors'
       }).catch(() => {});
     } catch {
       // In web preview or if URL is offline, fail silently

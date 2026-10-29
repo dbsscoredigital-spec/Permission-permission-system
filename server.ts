@@ -246,8 +246,19 @@ async function startServer() {
     next();
   });
 
-  // Helper function to call LINE Messaging API Push
+  // Helper function to call LINE Messaging API Push with deduplication cache
+  const pushDeduplicationCache = new Map<string, number>();
+
   const pushToLine = async (token: string, to: string, messages: any[]) => {
+    const cacheKey = `${to.trim()}:${JSON.stringify(messages)}`;
+    const now = Date.now();
+    const lastSent = pushDeduplicationCache.get(cacheKey);
+    if (lastSent && now - lastSent < 20000) {
+      console.log(`[pushToLine] Duplicate push prevented for recipient ${to}`);
+      return { status: 200, ok: true, data: { message: 'Duplicate suppressed' } };
+    }
+    pushDeduplicationCache.set(cacheKey, now);
+
     const response = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: {
@@ -701,12 +712,14 @@ async function startServer() {
 
             storeChanged = true;
 
-            // Push LINE Flex notification to requesting Teacher
-            notifyTeacherApprovalViaLineFlex(
-              currentReq,
-              isApprove ? 'approved' : 'rejected',
-              approverName
-            ).catch(e => console.error('Error in notifyTeacherApprovalViaLineFlex:', e));
+            // Note: Google Apps Script already sends LINE Flex when approved in Google Sheets
+            if (!serverStore.settings.googleAppsScriptUrl) {
+              notifyTeacherApprovalViaLineFlex(
+                currentReq,
+                isApprove ? 'approved' : 'rejected',
+                approverName
+              ).catch(e => console.error('Error in notifyTeacherApprovalViaLineFlex:', e));
+            }
           } else {
             // Update fields if changed
             if (rowStatus === 'approved' && currentReq.status !== 'approved') {
@@ -1482,13 +1495,15 @@ async function startServer() {
 
       saveServerStore();
 
-      // Forward to Google Apps Script
-      forwardToAppsScript('update_status', updated);
-
-      // Send LINE Flex Notification to Teacher
-      notifyTeacherApprovalViaLineFlex(updated, status, actorName || 'ผู้อนุมัติ', rejectionReason).catch(e =>
-        console.error('Error in notifyTeacherApprovalViaLineFlex:', e)
-      );
+      // Forward to Google Apps Script (Apps Script handles the single authoritative LINE push)
+      if (serverStore.settings.googleAppsScriptUrl && serverStore.settings.googleAppsScriptUrl.startsWith('http')) {
+        forwardToAppsScript('update_status', updated);
+      } else {
+        // Send LINE Flex Notification to Teacher only if Google Apps Script is not configured
+        notifyTeacherApprovalViaLineFlex(updated, status, actorName || 'ผู้อนุมัติ', rejectionReason).catch(e =>
+          console.error('Error in notifyTeacherApprovalViaLineFlex:', e)
+        );
+      }
 
       return res.json({ success: true, request: updated });
     } catch (err: any) {

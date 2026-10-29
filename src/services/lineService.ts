@@ -359,6 +359,15 @@ export class LineService {
       }
     }
 
+    // หากเชื่อมต่อกับ Google Apps Script ไว้ ตัว Apps Script จะเป็นผู้ส่ง Flex Message ให้เองอัตโนมัติ 1 ข้อความ (ไม่ส่งซ้ำจากฝั่งเว็บ)
+    const settings = storage.getSettings();
+    if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.startsWith('http') && settings.autoSyncWithGoogleSheet) {
+      return {
+        success: true,
+        message: 'Google Apps Script ส่ง LINE Flex ให้หัวหน้าเรียบร้อยแล้ว (ไม่ส่งซ้ำ)'
+      };
+    }
+
     // Send ONLY the Flex message (no trailing text message)
     const flexPayload = this.generateLineFlexMessagePayload(req);
     return await this.pushToLineBackend(approverLineId, [flexPayload]);
@@ -470,6 +479,12 @@ export class LineService {
           break;
         }
       }
+    }
+
+    // หากเชื่อมต่อ Google Apps Script ไว้ ตัว Apps Script จัดการส่ง Flex แจ้งผลให้ครูเรียบร้อยแล้ว (ไม่ส่งซ้ำจากเว็บ)
+    const settings = storage.getSettings();
+    if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.startsWith('http') && settings.autoSyncWithGoogleSheet) {
+      return { success: true, message: 'Google Apps Script ส่ง LINE Flex แจ้งผลให้ครูผู้ขอเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
     }
 
     if (teacherLineId && teacherLineId.trim().startsWith('U') && !teacherLineId.startsWith('U_')) {

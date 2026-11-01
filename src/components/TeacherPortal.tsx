@@ -35,7 +35,7 @@ interface TeacherPortalProps {
   users: User[];
   requests: ExitRequest[];
   branches: Branch[];
-  onSubmitRequest: (reqData: any) => void;
+  onSubmitRequest: (reqData: any) => Promise<any> | any;
   onViewQrPass: (req: ExitRequest) => void;
   onPrintSlip: (req: ExitRequest) => void;
   onOpenLineModal?: () => void;
@@ -105,13 +105,39 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       rawHref = rawHref.replace(/\/index\.html$/i, '');
       baseAppUrl = rawHref.endsWith('/') ? rawHref : `${rawHref}/`;
     }
-    const subAckUrl = `${baseAppUrl}?action=substitute_ack&reqId=${encodeURIComponent(req.id || '')}&subtab=substitute-tasks`;
+
+    const params = new URLSearchParams({
+      action: 'substitute_ack',
+      subtab: 'substitute-tasks',
+      reqId: String(req.id || '').trim(),
+      u: String(req.userName || currentUser.name || '').trim(),
+      uid: String(req.userId || currentUser.id || '').trim(),
+      b: String(req.branchName || currentUser.branchName || '').trim(),
+      bid: String(req.branchId || currentUser.branchId || '').trim(),
+      pos: String(req.position || currentUser.position || 'ครูผู้สอน').trim(),
+      d: String(req.destination || '').trim(),
+      r: String(req.reason || '').trim(),
+      date: String(req.exitDate || today).trim(),
+      exit: String(req.exitTime || '10:30').trim(),
+      ret: String(req.returnTime || '12:00').trim(),
+      sub: String(req.substituteTeacherName || '').trim(),
+      subId: String(req.substituteTeacherId || '').trim(),
+      subj: String(req.substituteSubject || 'ภาระงานสอนประจำวัน').trim(),
+      tasks: String(req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย').trim(),
+      appr: String(req.assignedApproverName || autoApproverName || 'หัวหน้าสาขาวิชา').trim(),
+      apprId: String(req.assignedApproverId || '').trim(),
+      apprLine: String(req.assignedApproverLineId || (currentBranch ? currentBranch.approverUserId : '') || '').trim(),
+      uline: String(req.userLineId || (req as any).teacherLineId || currentUser.lineId || '').trim(),
+      notes: String(req.notes || '').trim()
+    });
+
+    const subAckUrl = `${baseAppUrl}?${params.toString()}`;
     const text = `🔔 ขอความอนุเคราะห์สอนแทน (วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์)
 เรียน: ${req.substituteTeacherName || 'ครูผู้สอนแทน'}
 จาก: ${req.userName || currentUser.name} (${req.branchName || currentUser.branchName})
 📅 วันที่: ${req.exitDate} เวลา: ${req.exitTime} – ${req.returnTime} น.
 📚 รายวิชา: ${req.substituteSubject || 'ภาระงานประจำวัน'}
-📝 งานที่มอบหมาย: ${req.substituteTasks || 'ตามที่ได้ประสานงาน'}
+📝 งานที่มอบหมาย: ${req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย'}
 
 📌 กรุณากดลิงก์นี้เพื่อเข้าสู่ระบบและกด "รับทราบภาระงานสอนแทน" เพื่อส่งต่อให้หัวหน้าสาขาพิจารณาอนุมัติต่อไปครับ:
 ${subAckUrl}`;
@@ -274,15 +300,19 @@ ${subAckUrl}`;
       substituteStatus: hasClasses ? ('pending' as const) : ('not_required' as const)
     };
 
-    onSubmitRequest(payload);
-
-    if (hasClasses && selectedSubTeacher) {
-      setSubstituteShareModalReq({
+    const maybePromise = onSubmitRequest(payload);
+    Promise.resolve(maybePromise).then((res) => {
+      const realReq = res || {
         ...payload,
-        id: `REQ-${new Date().getFullYear() + 543}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}`,
-        substituteTeacherName: selectedSubTeacher.name
-      });
-    }
+        id: `REQ-${new Date().getFullYear() + 543}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}`
+      };
+      if (hasClasses && selectedSubTeacher) {
+        setSubstituteShareModalReq({
+          ...realReq,
+          substituteTeacherName: selectedSubTeacher.name
+        });
+      }
+    });
 
     try {
       confetti({

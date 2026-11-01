@@ -319,7 +319,14 @@ async function startServer() {
     if (targetReq.userId && String(targetReq.userId).trim().startsWith('U') && String(targetReq.userId).trim().length === 33) {
       return String(targetReq.userId).trim();
     }
-    return null;
+    const b = String(targetReq.branchName || targetReq.branchId || '').toLowerCase();
+    if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') return 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
+    if (b.includes('กล') || b === 'me') return 'U9474d32fb566bbfafc743b4511d46f9d';
+    if (b.includes('บัญชี') || b === 'ac') return 'Ue74d275282ab6b5d5c5264188503631d';
+    if (b.includes('ยนต์') || b === 'at') return 'U2529aae8c76082a8840d01549220f589';
+    if (b.includes('ไฟฟ้า') || b === 'el') return 'U6e2636be42c9019262e42e4312a687f9';
+    if (b.includes('สามัญ') || b === 'gen') return 'U38934e344a242b1a8a7741c7ff043895';
+    return 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // Default fallback
   };
 
   // Helper to build LINE Flex Message payload for Teacher status
@@ -728,6 +735,21 @@ async function startServer() {
               currentReq.approvedBy = row.approver || currentReq.approvedBy;
               storeChanged = true;
             }
+            if (row.substituteStatus && row.substituteStatus !== currentReq.substituteStatus) {
+              currentReq.substituteStatus = row.substituteStatus;
+              storeChanged = true;
+            }
+            if (row.substituteAcknowledgedAt && !currentReq.substituteAcknowledgedAt) {
+              currentReq.substituteAcknowledgedAt = row.substituteAcknowledgedAt;
+              storeChanged = true;
+            }
+            if (row.substituteTeacherName && (!currentReq.substituteTeacherName || currentReq.substituteTeacherName === 'ครูผู้สอนแทน')) {
+              currentReq.substituteTeacherName = row.substituteTeacherName;
+              currentReq.substituteSubject = row.substituteSubject || currentReq.substituteSubject;
+              currentReq.substituteTasks = row.substituteTasks || currentReq.substituteTasks;
+              currentReq.hasClasses = true;
+              storeChanged = true;
+            }
           }
         } else {
           // Request exists in Google Sheets but not yet in serverStore!
@@ -739,8 +761,8 @@ async function startServer() {
             branchName: row.branchName || matchedUser?.branchName || 'ธุรกิจดิจิทัล',
             position: matchedUser?.position || 'ครู',
             userPhone: matchedUser?.phone || '',
-            userLineId: matchedUser?.lineId || '',
-            teacherLineId: matchedUser?.lineId || '',
+            userLineId: row.userLineId || matchedUser?.lineId || '',
+            teacherLineId: row.userLineId || matchedUser?.lineId || '',
             userUsername: matchedUser?.username || '',
             submittedAt: cleanSubmittedAt || getThaiTimestamp(),
             exitDate: cleanExitDate,
@@ -755,8 +777,13 @@ async function startServer() {
             approvedAt: cleanApprovedAt || (rowStatus === 'approved' ? getThaiTimestamp() : undefined),
             approvedBy: rowStatus === 'approved' ? (row.approver || 'หัวหน้าสาขา') : undefined,
             qrToken: row.qrToken || `SECURE-EXIT-${reqId}-${matchedUser?.branchId || 'GEN'}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-            hasClasses: false,
-            substituteStatus: 'not_required'
+            hasClasses: row.hasClasses === true || String(row.hasClasses).toLowerCase() === 'true' || Boolean(row.substituteTeacherName),
+            substituteTeacherName: row.substituteTeacherName || '',
+            substituteTeacherId: row.substituteTeacherId || '',
+            substituteSubject: row.substituteSubject || '',
+            substituteTasks: row.substituteTasks || '',
+            substituteStatus: row.substituteStatus || (row.substituteTeacherName ? 'pending' : 'not_required'),
+            substituteAcknowledgedAt: row.substituteAcknowledgedAt || ''
           };
           serverStore.requests.unshift(newReq);
           storeChanged = true;

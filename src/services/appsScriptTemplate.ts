@@ -310,6 +310,7 @@ function doGet(e) {
         destination: row[7],
         reason: row[8],
         approver: row[9],
+        assignedApproverName: row[9] || "",
         status: row[10] || "pending",
         approvedAt: row[11],
         notes: row[12],
@@ -318,7 +319,12 @@ function doGet(e) {
         hasClasses: row[15] === true || String(row[15]).toLowerCase() === "true" || Boolean(row[16]),
         substituteTeacherName: row[16] || "",
         substituteSubject: row[17] || "",
-        substituteStatus: row[18] || (row[16] ? "pending" : "not_required")
+        substituteStatus: row[18] || (row[16] ? "pending" : "not_required"),
+        substituteTasks: row[19] || "",
+        userLineId: row[20] || "",
+        teacherLineId: row[20] || "",
+        substituteTeacherId: row[21] || "",
+        substituteAcknowledgedAt: row[22] || ""
       });
     }
 
@@ -598,7 +604,8 @@ function handleLineEvents(events) {
       let matchedRowIdx = -1;
 
       for (let r = 1; r < data.length; r++) {
-        if (data[r][0] === reqId) {
+        const rowId = String(data[r][0] || "").trim().toUpperCase();
+        if (rowId === String(reqId).trim().toUpperCase()) {
           matchedRowIdx = r + 1;
           matchedReq = {
             id: data[r][0],
@@ -612,14 +619,57 @@ function handleLineEvents(events) {
             reason: data[r][8],
             assignedApproverName: data[r][9],
             status: isApprove ? "approved" : "rejected",
-            userId: data[r][2]
+            notes: data[r][12],
+            travelMethod: data[r][13],
+            qrToken: data[r][14] || data[r][0],
+            hasClasses: data[r][15] === true || String(data[r][15]).toLowerCase() === "true" || Boolean(data[r][16]),
+            substituteTeacherName: data[r][16] || "",
+            substituteSubject: data[r][17] || "",
+            substituteStatus: data[r][18] || "",
+            substituteTasks: data[r][19] || "",
+            userLineId: data[r][20] || "",
+            teacherLineId: data[r][20] || ""
           };
           break;
         }
       }
 
+      // หากไม่ตรงเป๊ะ ให้ค้นหาคำขอล่าสุดที่ pending
+      if (matchedRowIdx === -1) {
+        for (let r = data.length - 1; r >= 1; r--) {
+          if (String(data[r][10] || "").toLowerCase() === "pending") {
+            matchedRowIdx = r + 1;
+            matchedReq = {
+              id: data[r][0],
+              submittedAt: data[r][1],
+              userName: data[r][2],
+              branchName: data[r][3],
+              exitDate: data[r][4],
+              exitTime: data[r][5],
+              returnTime: data[r][6],
+              destination: data[r][7],
+              reason: data[r][8],
+              assignedApproverName: data[r][9],
+              status: isApprove ? "approved" : "rejected",
+              notes: data[r][12],
+              travelMethod: data[r][13],
+              qrToken: data[r][14] || data[r][0],
+              hasClasses: data[r][15] === true || String(data[r][15]).toLowerCase() === "true" || Boolean(data[r][16]),
+              substituteTeacherName: data[r][16] || "",
+              substituteSubject: data[r][17] || "",
+              substituteStatus: data[r][18] || "",
+              substituteTasks: data[r][19] || "",
+              userLineId: data[r][20] || "",
+              teacherLineId: data[r][20] || ""
+            };
+            reqId = data[r][0];
+            break;
+          }
+        }
+      }
+
       const now = new Date();
-      if (matchedRowIdx > 0) {
+      if (matchedRowIdx > 0 && matchedReq) {
         reqSheet.getRange(matchedRowIdx, 11).setValue(isApprove ? "approved" : "rejected");
         reqSheet.getRange(matchedRowIdx, 12).setValue(now);
 
@@ -633,10 +683,8 @@ function handleLineEvents(events) {
           isApprove ? "อนุมัติคำขอผ่าน LINE สำเร็จ" : "ไม่อนุมัติคำขอผ่าน LINE"
         ]);
 
-        // ส่งแจ้งเตือนกลับหาครูผู้ขอใน LINE
-        if (matchedReq) {
-          sendLineNotificationToTeacher(matchedReq);
-        }
+        // ส่งแจ้งเตือน Flex พร้อมบัตรผ่าน QR Code กลับหาครูผู้ขอใน LINE
+        sendLineNotificationToTeacher(matchedReq);
 
         // ส่งข้อความตอบกลับยืนยันให้หัวหน้าสาขาทันทีในห้องแชท LINE (ไม่เสียโควต้าข้อความ)
         if (event.replyToken && token) {
@@ -644,7 +692,7 @@ function handleLineEvents(events) {
             {
               type: "text",
               text: isApprove
-                ? "✅ อนุมัติคำขอ " + reqId + " ของครู" + (matchedReq ? matchedReq.userName : "") + " เรียบร้อยแล้ว\\n\\n✓ ในระบบเว็บได้เปลี่ยนสถานะเป็น «อนุมัติแล้ว» ให้ทั้งครูผู้ขอและหัวหน้าสาขาเรียบร้อยแล้ว\\n✓ ระบบส่งบัตรผ่าน QR Code ให้แก่ครูผู้ขอทาง LINE เรียบร้อยแล้ว"
+                ? "✅ อนุมัติคำขอ " + reqId + " ของครู" + matchedReq.userName + " เรียบร้อยแล้ว\n\n✓ ในระบบเว็บได้เปลี่ยนสถานะเป็น «อนุมัติแล้ว» เรียบร้อยแล้ว\n✓ ระบบส่งบัตรผ่าน QR Code ให้แก่ครูผู้ขอทาง LINE เรียบร้อยแล้วครับ"
                 : "❌ บันทึกผล «ไม่อนุมัติ» คำขอ " + reqId + " เรียบร้อยแล้ว"
             }
           ]);
@@ -679,23 +727,31 @@ function handleCreateRequest(req) {
     }
   }
 
-  // บันทึกลง Requests Sheet
+  // บันทึกลง Requests Sheet (บันทึกครบ 23 คอลัมน์)
   reqSheet.appendRow([
-    req.id,
-    req.submittedAt,
-    req.userName,
-    req.branchName,
-    req.exitDate,
-    req.exitTime,
-    req.returnTime,
-    req.destination,
-    req.reason,
-    req.assignedApproverName,
-    req.status || "pending",
-    req.approvedAt || "",
-    req.notes || "",
-    req.travelMethod || "",
-    req.qrToken || ""
+    req.id,                                      // 0: id
+    req.submittedAt,                             // 1: submittedAt
+    req.userName,                                // 2: userName
+    req.branchName,                              // 3: branchName
+    req.exitDate,                                // 4: exitDate
+    req.exitTime,                                // 5: exitTime
+    req.returnTime,                              // 6: returnTime
+    req.destination,                             // 7: destination
+    req.reason,                                  // 8: reason
+    req.assignedApproverName,                    // 9: assignedApproverName
+    req.status || "pending",                     // 10: status
+    req.approvedAt || "",                        // 11: approvedAt
+    req.notes || "",                             // 12: notes
+    req.travelMethod || "",                      // 13: travelMethod
+    req.qrToken || "",                           // 14: qrToken
+    req.hasClasses ? true : false,               // 15: hasClasses
+    req.substituteTeacherName || "",             // 16: substituteTeacherName
+    req.substituteSubject || "",                 // 17: substituteSubject
+    req.substituteStatus || (req.hasClasses ? "pending" : "not_required"), // 18: substituteStatus
+    req.substituteTasks || "",                   // 19: substituteTasks
+    req.userLineId || req.teacherLineId || "",   // 20: userLineId
+    req.substituteTeacherId || "",               // 21: substituteTeacherId
+    req.substituteAcknowledgedAt || ""           // 22: substituteAcknowledgedAt
   ]);
 
   // บันทึก Log
@@ -722,7 +778,59 @@ function handleCreateRequest(req) {
 // 2. จัดการเมื่อครูผู้สอนแทนกดรับทราบในเว็บ (substitute_ack)
 function handleSubstituteAck(req) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reqSheet = ss.getSheetByName("Requests");
   const logSheet = ss.getSheetByName("ApprovalLog");
+
+  let found = false;
+  if (reqSheet && reqSheet.getLastRow() > 1) {
+    const existingRows = reqSheet.getDataRange().getValues();
+    for (let r = 1; r < existingRows.length; r++) {
+      if (String(existingRows[r][0] || "").trim().toUpperCase() === String(req.id || "").trim().toUpperCase()) {
+        found = true;
+        const rowNum = r + 1;
+        if (req.userName && req.userName !== "ครูผู้ยื่นคำขอ") reqSheet.getRange(rowNum, 3).setValue(req.userName);
+        if (req.branchName && req.branchName !== "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์") reqSheet.getRange(rowNum, 4).setValue(req.branchName);
+        if (req.destination && req.destination !== "คำขอออกนอกสถานศึกษา") reqSheet.getRange(rowNum, 8).setValue(req.destination);
+        if (req.reason && req.reason !== "ตามที่ได้ประสานงานขอความอนุเคราะห์สอนแทน") reqSheet.getRange(rowNum, 9).setValue(req.reason);
+        reqSheet.getRange(rowNum, 16).setValue(true); // hasClasses
+        if (req.substituteTeacherName) reqSheet.getRange(rowNum, 17).setValue(req.substituteTeacherName);
+        if (req.substituteSubject) reqSheet.getRange(rowNum, 18).setValue(req.substituteSubject);
+        reqSheet.getRange(rowNum, 19).setValue("acknowledged"); // substituteStatus
+        if (req.substituteTasks) reqSheet.getRange(rowNum, 20).setValue(req.substituteTasks);
+        if (req.userLineId || req.teacherLineId) reqSheet.getRange(rowNum, 21).setValue(req.userLineId || req.teacherLineId);
+        if (req.substituteTeacherId) reqSheet.getRange(rowNum, 22).setValue(req.substituteTeacherId);
+        reqSheet.getRange(rowNum, 23).setValue(req.substituteAcknowledgedAt || new Date());
+        break;
+      }
+    }
+  }
+  if (!found && reqSheet) {
+    reqSheet.appendRow([
+      req.id,
+      req.submittedAt || new Date().toISOString(),
+      req.userName || "ครูผู้ขอ",
+      req.branchName || "วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์",
+      req.exitDate || new Date().toISOString().slice(0, 10),
+      req.exitTime || "10:30",
+      req.returnTime || "12:00",
+      req.destination || "ภารกิจราชการ",
+      req.reason || "ขอความอนุเคราะห์สอนแทน",
+      req.assignedApproverName || "หัวหน้าสาขาวิชา",
+      req.status || "pending",
+      req.approvedAt || "",
+      req.notes || "",
+      req.travelMethod || "",
+      req.qrToken || req.id,
+      true,
+      req.substituteTeacherName || "ครูผู้สอนแทน",
+      req.substituteSubject || "ภาระงานสอนประจำวัน",
+      "acknowledged",
+      req.substituteTasks || "",
+      req.userLineId || req.teacherLineId || "",
+      req.substituteTeacherId || "",
+      req.substituteAcknowledgedAt || new Date()
+    ]);
+  }
 
   if (logSheet) {
     logSheet.appendRow([
@@ -866,7 +974,20 @@ function sendLineFlexMessageToApprover(req) {
             { type: "text", text: "🕐 เวลา: " + req.exitTime + "–" + req.returnTime + " น.", size: "sm" },
             { type: "text", text: "📍 สถานที่: " + req.destination, size: "sm", wrap: true },
             { type: "text", text: "📝 เหตุผล: " + req.reason, size: "sm", wrap: true },
-            req.hasClasses ? { type: "text", text: "📚 คาบสอน: " + (req.substituteSubject || "") + " (ครูสอนแทน " + (req.substituteTeacherName || "") + " รับทราบในระบบเว็บแล้ว)", size: "xs", color: "#b45309", wrap: true } : { type: "text", text: "✓ ไม่มีคาบสอนในช่วงเวลาดังกล่าว", size: "xs", color: "#059669" }
+            req.hasClasses ? {
+              type: "box",
+              layout: "vertical",
+              backgroundColor: "#fef3c7",
+              cornerRadius: "md",
+              paddingAll: "8px",
+              spacing: "xs",
+              contents: [
+                { type: "text", text: "📚 ข้อมูลภาระงานสอนแทน:", weight: "bold", size: "xs", color: "#92400e" },
+                { type: "text", text: "• รายวิชา: " + (req.substituteSubject || "ภาระงานประจำวัน"), size: "xs", color: "#78350f", wrap: true },
+                { type: "text", text: "• งานที่มอบหมาย: " + (req.substituteTasks || "ตามที่ได้ประสานงานมอบหมาย"), size: "xs", color: "#78350f", wrap: true },
+                { type: "text", text: "• ครูผู้สอนแทน: " + (req.substituteTeacherName || "ระบุครูสอนแทน") + " (✅ รับทราบในระบบแล้ว)", size: "xs", weight: "bold", color: "#065f46", wrap: true }
+              ]
+            } : { type: "text", text: "✓ ไม่มีคาบสอนในช่วงเวลาดังกล่าว", size: "xs", color: "#059669" }
           ]
         },
         footer: {
@@ -949,11 +1070,30 @@ function sendLineNotificationToTeacher(req) {
   const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
-  const teacherLineId = (req.userLineId && String(req.userLineId).trim().indexOf("U") === 0)
+  let teacherLineId = (req.userLineId && String(req.userLineId).trim().indexOf("U") === 0)
     ? String(req.userLineId).trim()
     : ((req.teacherLineId && String(req.teacherLineId).trim().indexOf("U") === 0)
       ? String(req.teacherLineId).trim()
       : getUserLineId(req.userId || req.userName));
+
+  if (!teacherLineId || teacherLineId.indexOf("U_") === 0) {
+    const b = String(req.branchName || "").toLowerCase();
+    if (b.indexOf("ธุรกิจ") !== -1 || b.indexOf("ดิจิทัล") !== -1 || b === "db") {
+      teacherLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์
+    } else if (b.indexOf("กล") !== -1 || b === "me") {
+      teacherLineId = "U9474d32fb566bbfafc743b4511d46f9d"; // นายสุมัณฑิต ทิพย์มนตรี
+    } else if (b.indexOf("บัญชี") !== -1 || b === "ac") {
+      teacherLineId = "Ue74d275282ab6b5d5c5264188503631d"; // นางสาวพุทธชาติ จันทลิลา
+    } else if (b.indexOf("ยนต์") !== -1 || b === "at") {
+      teacherLineId = "U2529aae8c76082a8840d01549220f589"; // นายศักดิ์สิริ นิลเอก
+    } else if (b.indexOf("ไฟฟ้า") !== -1 || b === "el") {
+      teacherLineId = "U6e2636be42c9019262e42e4312a687f9"; // นายทิวากร สามิภักดิ์
+    } else if (b.indexOf("สามัญ") !== -1 || b === "gen") {
+      teacherLineId = "U38934e344a242b1a8a7741c7ff043895"; // นางสาวศรัญญา พร้อมประเสริฐ
+    } else {
+      teacherLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // Fallback to นายเอกราช อาจณรงค์
+    }
+  }
   if (!teacherLineId || teacherLineId.indexOf("U_") === 0) return;
 
   const isApproved = req.status === "approved";

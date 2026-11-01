@@ -113,28 +113,48 @@ export default function App() {
         if (reqId && (action === 'substitute_ack' || action === 'sub_ack' || action === 'substitute' || p.get('subtab') === 'substitute-tasks')) {
           const localReqs = storage.getRequests();
           const found = localReqs.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-          if (found) return found;
-          return {
+
+          const urlUserName = p.get('u');
+          const isReal = (s?: string | null) => Boolean(s && s.trim() && s !== '-' && s !== 'ครูผู้ขอ' && s !== 'ครูผู้ยื่นคำขอ');
+
+          if (found && isReal(found.userName) && found.userName !== 'ครูผู้ยื่นคำขอ' && found.substituteTeacherName && found.substituteTeacherName !== 'ครูผู้สอนแทน') {
+            return found;
+          }
+
+          const constructedReq: ExitRequest = {
             id: reqId,
-            userName: 'ครูผู้ยื่นคำขอ',
-            destination: 'คำขอออกนอกสถานศึกษา',
-            reason: 'ตามที่ได้ประสานงานขอความอนุเคราะห์สอนแทน',
-            exitDate: new Date().toISOString().slice(0, 10),
-            exitTime: '10:30',
-            returnTime: '12:00',
-            branchName: 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
-            branchId: '',
-            position: 'ครูผู้สอน',
-            assignedApproverName: 'หัวหน้าสาขาวิชา',
-            status: 'pending',
+            userName: isReal(urlUserName) ? urlUserName!.trim() : (found?.userName || 'ครูผู้ยื่นคำขอ'),
+            userId: p.get('uid') || found?.userId || '',
+            branchName: p.get('b') || found?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+            branchId: p.get('bid') || found?.branchId || 'DB',
+            position: p.get('pos') || found?.position || 'ครูผู้สอน',
+            destination: p.get('d') || found?.destination || 'คำขอออกนอกสถานศึกษา',
+            reason: p.get('r') || found?.reason || 'ตามที่ได้ประสานงานขอความอนุเคราะห์สอนแทน',
+            exitDate: p.get('date') || found?.exitDate || new Date().toISOString().slice(0, 10),
+            exitTime: p.get('exit') || found?.exitTime || '10:30',
+            returnTime: p.get('ret') || found?.returnTime || '12:00',
+            assignedApproverName: p.get('appr') || found?.assignedApproverName || 'หัวหน้าสาขาวิชา',
+            assignedApproverId: p.get('apprId') || found?.assignedApproverId || '',
+            assignedApproverLineId: p.get('apprLine') || found?.assignedApproverLineId || '',
+            status: found?.status || 'pending',
             hasClasses: true,
-            substituteStatus: 'pending',
-            substituteTeacherName: 'ครูผู้สอนแทน',
-            substituteSubject: 'ภาระงานสอนประจำวัน',
-            substituteTasks: '',
-            travelMethod: 'ตามภารกิจราชการ',
-            qrToken: reqId
-          } as ExitRequest;
+            substituteStatus: found?.substituteStatus || 'pending',
+            substituteTeacherName: p.get('sub') || found?.substituteTeacherName || 'นางสาววิลาวัณย์ หนูแก้ว',
+            substituteTeacherId: p.get('subId') || found?.substituteTeacherId || '',
+            substituteSubject: p.get('subj') || found?.substituteSubject || 'ภาระงานสอนประจำวัน',
+            substituteTasks: p.get('tasks') || found?.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย',
+            userLineId: p.get('uline') || found?.userLineId || '',
+            teacherLineId: p.get('uline') || found?.teacherLineId || '',
+            travelMethod: found?.travelMethod || 'ตามภารกิจราชการ',
+            qrToken: found?.qrToken || `SECURE-EXIT-${reqId}`,
+            notes: p.get('notes') || found?.notes || ''
+          };
+
+          // Persist immediately to local storage so the substitute duties tab displays it right away
+          const filtered = localReqs.filter(r => r.id.toLowerCase() !== reqId.toLowerCase());
+          storage.saveRequests([constructedReq, ...filtered]);
+
+          return constructedReq;
         }
       }
     } catch {}
@@ -349,32 +369,62 @@ export default function App() {
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (reqId && (action === 'substitute_ack' || action === 'sub_ack' || action === 'substitute' || urlParams.get('subtab') === 'substitute-tasks')) {
         setActiveTab('teacher');
+
+        // Check if substitute teacher name is in URL, auto switch to that teacher if not currently that user
+        const targetSubName = urlParams.get('sub');
+        if (targetSubName) {
+          const clean = (s: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
+          const targetSubUser = users.find(u => 
+            clean(u.name) === clean(targetSubName) ||
+            (u.name && targetSubName && (u.name.includes(targetSubName) || targetSubName.includes(u.name)))
+          );
+          if (targetSubUser && currentUser.id !== targetSubUser.id) {
+            handleUserChange(targetSubUser);
+          }
+        }
+
         const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-        if (found) {
+        const isReal = (s?: string | null) => Boolean(s && s.trim() && s !== '-' && s !== 'ครูผู้ขอ' && s !== 'ครูผู้ยื่นคำขอ');
+
+        if (found && isReal(found.userName) && found.userName !== 'ครูผู้ยื่นคำขอ' && found.substituteTeacherName && found.substituteTeacherName !== 'ครูผู้สอนแทน') {
           setSubstituteAckModalReq(found);
           showToast(`เปิดคำขอสอนแทน: ${found.id} ของครู${found.userName}`, 'info');
         } else {
-          // 1. Direct fetch from server endpoint for instant response
-          fetch(`/api/requests/${encodeURIComponent(reqId)}`)
-            .then(res => res.json())
-            .then(data => {
-              if (data && data.success && data.request) {
-                setSubstituteAckModalReq(data.request);
-                showToast(`เปิดคำขอสอนแทน: ${data.request.id} ของครู${data.request.userName}`, 'info');
-              }
-            })
-            .catch(() => {});
+          // Construct complete authentic request from URL parameters
+          const constructedReq: ExitRequest = {
+            id: reqId,
+            userName: isReal(urlParams.get('u')) ? urlParams.get('u')!.trim() : (found?.userName || 'ครูผู้ยื่นคำขอ'),
+            userId: urlParams.get('uid') || found?.userId || '',
+            branchName: urlParams.get('b') || found?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+            branchId: urlParams.get('bid') || found?.branchId || 'DB',
+            position: urlParams.get('pos') || found?.position || 'ครูผู้สอน',
+            destination: urlParams.get('d') || found?.destination || 'คำขอออกนอกสถานศึกษา',
+            reason: urlParams.get('r') || found?.reason || 'ตามที่ได้ประสานงานขอความอนุเคราะห์สอนแทน',
+            exitDate: urlParams.get('date') || found?.exitDate || new Date().toISOString().slice(0, 10),
+            exitTime: urlParams.get('exit') || found?.exitTime || '10:30',
+            returnTime: urlParams.get('ret') || found?.returnTime || '12:00',
+            assignedApproverName: urlParams.get('appr') || found?.assignedApproverName || 'หัวหน้าสาขาวิชา',
+            assignedApproverId: urlParams.get('apprId') || found?.assignedApproverId || '',
+            assignedApproverLineId: urlParams.get('apprLine') || found?.assignedApproverLineId || '',
+            status: found?.status || 'pending',
+            hasClasses: true,
+            substituteStatus: found?.substituteStatus || 'pending',
+            substituteTeacherName: urlParams.get('sub') || found?.substituteTeacherName || 'นางสาววิลาวัณย์ หนูแก้ว',
+            substituteTeacherId: urlParams.get('subId') || found?.substituteTeacherId || '',
+            substituteSubject: urlParams.get('subj') || found?.substituteSubject || 'ภาระงานสอนประจำวัน',
+            substituteTasks: urlParams.get('tasks') || found?.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย',
+            userLineId: urlParams.get('uline') || found?.userLineId || '',
+            teacherLineId: urlParams.get('uline') || found?.teacherLineId || '',
+            travelMethod: found?.travelMethod || 'ตามภารกิจราชการ',
+            qrToken: found?.qrToken || `SECURE-EXIT-${reqId}`,
+            notes: urlParams.get('notes') || found?.notes || ''
+          };
 
-          // 2. Full sync
-          storage.syncWithServer().then((syncRes) => {
-            refreshAllData();
-            const reqList = syncRes.allRequests || storage.getRequests();
-            const reFound = reqList.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-            if (reFound) {
-              setSubstituteAckModalReq(reFound);
-              showToast(`เปิดคำขอสอนแทน: ${reFound.id} ของครู${reFound.userName}`, 'info');
-            }
-          }).catch(() => {});
+          const updatedReqs = [constructedReq, ...requests.filter(r => r.id.toLowerCase() !== reqId.toLowerCase())];
+          storage.saveRequests(updatedReqs);
+          setRequests(updatedReqs);
+          setSubstituteAckModalReq(constructedReq);
+          showToast(`เปิดคำขอสอนแทน: ${constructedReq.id} ของครู${constructedReq.userName}`, 'info');
         }
       }
     } catch {
@@ -434,6 +484,7 @@ export default function App() {
         }
       }
     }
+    return newReq;
   };
 
   // 1.1 Acknowledge Substitute Teaching (In-System Web Action)

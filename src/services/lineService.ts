@@ -745,6 +745,46 @@ export class LineService {
                 { type: 'text', text: '📝 เหตุผล:', size: 'sm', color: '#64748b', flex: 2 },
                 { type: 'text', text: req.reason, size: 'sm', color: '#0f172a', flex: 5, wrap: true }
               ]
+            },
+            (req.hasClasses || req.substituteTeacherName) ? {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#fef3c7',
+              cornerRadius: '8px',
+              paddingAll: '10px',
+              spacing: 'xs',
+              contents: [
+                { type: 'text', text: '📚 ข้อมูลภาระงานสอนแทน (รับทราบแล้ว)', weight: 'bold', size: 'xs', color: '#92400e' },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '👨‍🏫 ผู้สอนแทน:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: `${req.substituteTeacherName || 'ระบุครูสอนแทน'} (✅ รับทราบในระบบแล้ว)`, size: 'xs', weight: 'bold', color: '#065f46', flex: 5, wrap: true }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '📖 รายวิชา:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: req.substituteSubject || 'ภาระงานสอนประจำวัน', size: 'xs', weight: 'bold', color: '#0f172a', flex: 5, wrap: true }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '📝 งานที่มอบหมาย:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย', size: 'xs', color: '#0f172a', flex: 5, wrap: true }
+                  ]
+                }
+              ]
+            } : {
+              type: 'text',
+              text: '✓ ไม่มีคาบสอนในช่วงเวลาดังกล่าว',
+              size: 'xs',
+              color: '#059669'
             }
           ]
         },

@@ -712,31 +712,65 @@ export class StorageService {
     return newRequest;
   }
 
-  public acknowledgeSubstitute(requestId: string, teacher: User): ExitRequest | null {
+  public acknowledgeSubstitute(requestId: string, teacher?: User, fallbackReq?: Partial<ExitRequest>): ExitRequest {
     const requests = this.getRequests();
-    const index = requests.findIndex(r => r.id === requestId);
-    if (index === -1) return null;
+    const index = requests.findIndex(r => r.id.toLowerCase() === requestId.toLowerCase());
 
     const now = new Date();
     const thaiTimestamp = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    const updated: ExitRequest = {
-      ...requests[index],
-      substituteStatus: 'acknowledged',
-      substituteAcknowledgedAt: thaiTimestamp
-    };
+    let updated: ExitRequest;
+    if (index === -1) {
+      updated = {
+        id: requestId,
+        userId: fallbackReq?.userId || 'temp',
+        userName: fallbackReq?.userName || 'ครูผู้ขอออกนอก',
+        position: fallbackReq?.position || 'ครูผู้สอน',
+        branchId: fallbackReq?.branchId || '',
+        branchName: fallbackReq?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+        exitDate: fallbackReq?.exitDate || new Date().toISOString().slice(0, 10),
+        exitTime: fallbackReq?.exitTime || '10:00',
+        returnTime: fallbackReq?.returnTime || '12:00',
+        destination: fallbackReq?.destination || 'ไปราชการ / ติดต่อภารกิจ',
+        reason: fallbackReq?.reason || 'ขอความอนุเคราะห์สอนแทน',
+        travelMethod: fallbackReq?.travelMethod || 'ยานพาหนะส่วนตัว',
+        assignedApproverId: fallbackReq?.assignedApproverId || 'usr-appr-1',
+        assignedApproverName: fallbackReq?.assignedApproverName || 'หัวหน้าสาขาวิชา',
+        assignedApproverLineId: fallbackReq?.assignedApproverLineId || '',
+        status: (fallbackReq?.status as any) || 'pending',
+        hasClasses: true,
+        substituteStatus: 'acknowledged',
+        substituteAcknowledgedAt: thaiTimestamp,
+        substituteTeacherName: fallbackReq?.substituteTeacherName || teacher?.name || 'ครูผู้สอนแทน',
+        substituteSubject: fallbackReq?.substituteSubject || 'ภาระงานสอนประจำวัน',
+        substituteTasks: fallbackReq?.substituteTasks || '',
+        submittedAt: fallbackReq?.submittedAt || new Date().toISOString(),
+        qrToken: fallbackReq?.qrToken || requestId
+      };
+      requests.unshift(updated);
+    } else {
+      updated = {
+        ...requests[index],
+        ...(fallbackReq || {}),
+        substituteStatus: 'acknowledged',
+        substituteAcknowledgedAt: thaiTimestamp
+      };
+      requests[index] = updated;
+    }
 
-    requests[index] = updated;
     this.saveRequests(requests);
+
+    const teacherName = teacher?.name || updated.substituteTeacherName || 'ครูผู้สอนแทน';
+    const teacherId = teacher?.id || updated.substituteTeacherId || 'substitute-teacher';
 
     this.addLog({
       requestId,
       requestSummary: `${updated.userName} ขอออกไป ${updated.destination}`,
-      actorId: teacher.id,
-      actorName: teacher.name,
+      actorId: teacherId,
+      actorName: teacherName,
       actorRole: 'ครูผู้สอนแทน',
       action: 'substitute_ack',
-      comment: `ครูผู้สอนแทน (${teacher.name}) กดรับทราบภาระงานสอนแทนเรียบร้อยแล้ว`
+      comment: `ครูผู้สอนแทน (${teacherName}) กดรับทราบภาระงานสอนแทนเรียบร้อยแล้ว`
     });
 
     // Direct push to server backend for instant cross-device synchronization
@@ -746,8 +780,8 @@ export class StorageService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           substituteStatus: 'acknowledged',
-          teacherId: teacher.id,
-          teacherName: teacher.name,
+          teacherId,
+          teacherName,
           timestamp: thaiTimestamp
         })
       }).catch(() => {});

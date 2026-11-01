@@ -1447,6 +1447,18 @@ async function startServer() {
     }
   });
 
+  // API 4.9: Get Single Request by ID or QR Token
+  app.get('/api/requests/:id', (req, res) => {
+    const { id } = req.params;
+    const found = serverStore.requests.find(
+      r => r.id.toLowerCase() === id.toLowerCase() || (r.qrToken && r.qrToken.toLowerCase() === id.toLowerCase())
+    );
+    if (found) {
+      return res.json({ success: true, request: found });
+    }
+    return res.status(404).json({ success: false, error: 'Request not found' });
+  });
+
   // API 5: Direct Request Status Update
   app.post('/api/requests/:id/status', async (req, res) => {
     try {

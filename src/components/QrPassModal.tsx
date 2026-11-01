@@ -8,7 +8,7 @@ import { X, CheckCircle, Clock, Calendar, MapPin, Building2, ShieldCheck, Printe
 interface QrPassModalProps {
   request: ExitRequest | null;
   onClose: () => void;
-  onPrint: (req: ExitRequest) => void;
+  onPrint?: (req: ExitRequest) => void;
   logoUrl?: string;
   schoolName?: string;
 }
@@ -179,7 +179,7 @@ export const QrPassModal: React.FC<QrPassModalProps> = ({ request, onClose, onPr
 
           <div className="flex items-center gap-2 pt-1">
             <button
-              onClick={() => onPrint(request)}
+              onClick={() => (onPrint ? onPrint(request) : window.print())}
               className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition-all"
             >
               <Printer className="w-3.5 h-3.5" />

@@ -314,7 +314,11 @@ function doGet(e) {
         approvedAt: row[11],
         notes: row[12],
         travelMethod: row[13],
-        qrToken: row[14]
+        qrToken: row[14],
+        hasClasses: row[15] === true || String(row[15]).toLowerCase() === "true" || Boolean(row[16]),
+        substituteTeacherName: row[16] || "",
+        substituteSubject: row[17] || "",
+        substituteStatus: row[18] || (row[16] ? "pending" : "not_required")
       });
     }
 
@@ -516,7 +520,12 @@ function doGet(e) {
         status: row[10],
         approvedAt: row[11],
         notes: row[12],
-        travelMethod: row[13]
+        travelMethod: row[13],
+        qrToken: row[14],
+        hasClasses: row[15] === true || String(row[15]).toLowerCase() === "true" || Boolean(row[16]),
+        substituteTeacherName: row[16] || "",
+        substituteSubject: row[17] || "",
+        substituteStatus: row[18] || (row[16] ? "pending" : "not_required")
       };
       return ContentService.createTextOutput(JSON.stringify({ found: true, data: result }))
         .setMimeType(ContentService.MimeType.JSON);

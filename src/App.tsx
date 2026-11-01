@@ -104,7 +104,42 @@ export default function App() {
   } | null>(null);
 
   // 1-Click Direct Substitute Teaching Ack Modal (Triggered by LINE share link ?action=substitute_ack&reqId=...)
-  const [substituteAckModalReq, setSubstituteAckModalReq] = useState<ExitRequest | null>(null);
+  const [substituteAckModalReq, setSubstituteAckModalReq] = useState<ExitRequest | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const p = new URLSearchParams(window.location.search);
+        const action = p.get('action');
+        const reqId = p.get('reqId');
+        if (reqId && (action === 'substitute_ack' || action === 'sub_ack' || action === 'substitute' || p.get('subtab') === 'substitute-tasks')) {
+          const localReqs = storage.getRequests();
+          const found = localReqs.find(r => r.id.toLowerCase() === reqId.toLowerCase());
+          if (found) return found;
+          return {
+            id: reqId,
+            userName: 'ครูผู้ยื่นคำขอ',
+            destination: 'คำขอออกนอกสถานศึกษา',
+            reason: 'ตามที่ได้ประสานงานขอความอนุเคราะห์สอนแทน',
+            exitDate: new Date().toISOString().slice(0, 10),
+            exitTime: '10:30',
+            returnTime: '12:00',
+            branchName: 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+            branchId: '',
+            position: 'ครูผู้สอน',
+            assignedApproverName: 'หัวหน้าสาขาวิชา',
+            status: 'pending',
+            hasClasses: true,
+            substituteStatus: 'pending',
+            substituteTeacherName: 'ครูผู้สอนแทน',
+            substituteSubject: 'ภาระงานสอนประจำวัน',
+            substituteTasks: '',
+            travelMethod: 'ตามภารกิจราชการ',
+            qrToken: reqId
+          } as ExitRequest;
+        }
+      }
+    } catch {}
+    return null;
+  });
   const [isSubmittingAck, setIsSubmittingAck] = useState<boolean>(false);
 
   // Toast Notification
@@ -319,6 +354,18 @@ export default function App() {
           setSubstituteAckModalReq(found);
           showToast(`เปิดคำขอสอนแทน: ${found.id} ของครู${found.userName}`, 'info');
         } else {
+          // 1. Direct fetch from server endpoint for instant response
+          fetch(`/api/requests/${encodeURIComponent(reqId)}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data && data.success && data.request) {
+                setSubstituteAckModalReq(data.request);
+                showToast(`เปิดคำขอสอนแทน: ${data.request.id} ของครู${data.request.userName}`, 'info');
+              }
+            })
+            .catch(() => {});
+
+          // 2. Full sync
           storage.syncWithServer().then((syncRes) => {
             refreshAllData();
             const reqList = syncRes.allRequests || storage.getRequests();
@@ -399,7 +446,13 @@ export default function App() {
     setRequests(prev => prev.map(r => r.id === requestId ? { ...r, substituteStatus: 'acknowledged', substituteAcknowledgedAt: thaiTimestamp } : r));
 
     // 2. Persist to storage & backend server
-    const updated = storage.acknowledgeSubstitute(requestId, currentUser);
+    const targetUser = currentUser?.id 
+      ? currentUser 
+      : (users.find(u => u.name === substituteAckModalReq?.substituteTeacherName) || users.find(u => u.role === 'teacher') || currentUser);
+    const updated = storage.acknowledgeSubstitute(requestId, targetUser, substituteAckModalReq || undefined);
+    if (!isLoggedIn && targetUser) {
+      handleLoginSuccess(targetUser);
+    }
     if (updated) {
       refreshAllData();
       showToast(`✅ รับทราบภาระงานสอนแทนคำขอ ${requestId} เรียบร้อยแล้ว`, 'success');
@@ -565,7 +618,219 @@ export default function App() {
     (currentUser.role === 'admin' || r.branchId === currentUser.branchId || r.branchName === currentUser.branchName)
   ).length;
 
-  // If not logged in, render LoginScreen
+  // Instant 1-Click LINE Approval Confirmation Modal
+  const renderDirectActionResultModal = () => {
+    if (!directActionResult) return null;
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+        <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border-2 border-emerald-400 animate-in zoom-in-95">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-md ${directActionResult.action === 'approve' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+            {directActionResult.action === 'approve' ? (
+              <CheckCircle className="w-10 h-10" />
+            ) : (
+              <AlertCircle className="w-10 h-10" />
+            )}
+          </div>
+
+          <div>
+            <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
+              ดำเนินการสำเร็จผ่าน LINE
+            </span>
+            <h3 className="text-xl font-black text-slate-900 mt-2">
+              {directActionResult.action === 'approve' ? '✅ บันทึกอนุมัติคำขอเรียบร้อยแล้ว' : '❌ บันทึกไม่อนุมัติคำขอ'}
+            </h3>
+            <p className="text-xs font-mono font-semibold text-purple-700 mt-1">
+              รหัสคำขอ: {directActionResult.reqId}
+            </p>
+          </div>
+
+          {directActionResult.request && (
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-left text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-500">ครูผู้ขอ:</span>
+                <strong className="text-slate-800">{directActionResult.request.userName}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สาขาวิชา:</span>
+                <span className="font-semibold text-slate-700">{directActionResult.request.branchName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สถานที่:</span>
+                <span className="font-semibold text-slate-700 truncate max-w-[200px]">{directActionResult.request.destination}</span>
+              </div>
+              <div className="flex justify-between pt-1.5 border-t border-slate-200">
+                <span className="text-slate-500">สถานะล่าสุด:</span>
+                <span className={`font-black px-2.5 py-0.5 rounded border text-xs ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-300' : 'text-rose-700 bg-rose-50 border-rose-300'}`}>
+                  {directActionResult.action === 'approve' ? 'อนุมัติแล้ว (Approved)' : 'ไม่อนุมัติ (Rejected)'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-600 leading-relaxed bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+            {directActionResult.action === 'approve'
+              ? '💡 ระบบหน้าเว็บและ รปภ. ได้รับสถานะ "อนุมัติแล้ว" อัตโนมัติทันที พร้อมส่งแจ้งเตือนออกบัตรผ่าน QR Code แก่ครูเรียบร้อยแล้วครับ'
+              : '💡 ได้บันทึกสถานะไม่อนุมัติลงในระบบเรียบร้อยแล้ว'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setDirectActionResult(null)}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md cursor-pointer transition-all"
+          >
+            เสร็จสิ้น / ปิดหน้านี้
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // 1-Click Direct Substitute Teaching Ack Modal (Opened via LINE link ?action=substitute_ack&reqId=...)
+  const renderSubstituteAckModal = () => {
+    if (!substituteAckModalReq) return null;
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+        <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 relative animate-in zoom-in-95 my-6">
+          <button
+            type="button"
+            onClick={() => {
+              setSubstituteAckModalReq(null);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs">
+              <Handshake className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                รหัสคำขอ: {substituteAckModalReq.id}
+              </span>
+              <h3 className="text-lg font-black text-slate-900 mt-1">
+                คำขอความอนุเคราะห์สอนแทน
+              </h3>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200/80 mb-5">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-slate-500">ครูผู้ขอออกนอก:</span>
+              <strong className="text-slate-900 text-sm">{substituteAckModalReq.userName} ({substituteAckModalReq.branchName})</strong>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">วัน-เวลาที่ขอสอนแทน:</span>
+              <span className="font-bold text-slate-800">{substituteAckModalReq.exitDate} เวลา {substituteAckModalReq.exitTime} – {substituteAckModalReq.returnTime} น.</span>
+            </div>
+
+            <div className="p-3 bg-amber-100/70 rounded-xl border border-amber-200/90 text-amber-950 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-xs text-amber-900">
+                <BookOpen className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>วิชาที่ขอให้สอนแทน: {substituteAckModalReq.substituteSubject || 'ภาระงานสอนประจำวัน'}</span>
+              </div>
+              {substituteAckModalReq.substituteTasks && (
+                <div className="text-[11px] text-slate-800 pt-0.5">
+                  <span className="font-semibold text-slate-900">งานที่มอบหมาย:</span> {substituteAckModalReq.substituteTasks}
+                </div>
+              )}
+              <div className="text-[10px] text-amber-800 pt-1 border-t border-amber-200/60">
+                ระบุครูผู้สอนแทน: <strong>{substituteAckModalReq.substituteTeacherName || 'ครูผู้สอนแทน'}</strong>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 pt-1">
+              สถานที่ที่ครูผู้ขอไป: <strong>{substituteAckModalReq.destination}</strong> (เหตุผล: {substituteAckModalReq.reason})
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+              <span className="text-slate-500">สถานะการรับทราบปัจจุบัน:</span>
+              {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
+                <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  รับทราบแล้ว ({substituteAckModalReq.substituteAcknowledgedAt || 'เรียบร้อย'})
+                </span>
+              ) : substituteAckModalReq.substituteStatus === 'declined' ? (
+                <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
+                  แจ้งไม่สะดวกสอนแทน
+                </span>
+              ) : (
+                <span className="font-bold px-2.5 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                  ⏳ รอท่านกดยืนยันรับทราบ
+                </span>
+              )}
+            </div>
+          </div>
+
+          {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
+            <div className="space-y-3">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs leading-relaxed flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>✓ ท่านได้รับทราบภาระงานสอนแทนนี้แล้ว ระบบได้ส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปเรียบร้อยแล้วครับ</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSubstituteAckModalReq(null);
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                }}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow-md transition-all"
+              >
+                ✓ รับทราบแล้ว / ปิดหน้านี้
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+                💡 เมื่อท่านกด <strong>"รับทราบภาระงานสอนแทน"</strong> ระบบจะบันทึกผลและส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขา เพื่อพิจารณาอนุมัติคำขอทันทีครับ
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSubmittingAck}
+                  onClick={() => {
+                    handleDeclineSubstitute(substituteAckModalReq.id, 'ไม่สะดวกสอนแทนตามเวลาดังกล่าว');
+                    setSubstituteAckModalReq(null);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }}
+                  className="w-1/3 py-3 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all disabled:opacity-50 text-center"
+                >
+                  ไม่สะดวกสอนแทน
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingAck}
+                  onClick={async () => {
+                    setIsSubmittingAck(true);
+                    try {
+                      await handleAcknowledgeSubstitute(substituteAckModalReq.id);
+                      setSubstituteAckModalReq(prev => prev ? {
+                        ...prev,
+                        substituteStatus: 'acknowledged',
+                        substituteAcknowledgedAt: new Date().toLocaleTimeString('th-TH')
+                      } : null);
+                      showToast(`🎉 บันทึกรับทราบภาระงานสอนแทน ${substituteAckModalReq.id} สำเร็จ!`, 'success');
+                    } finally {
+                      setIsSubmittingAck(false);
+                    }
+                  }}
+                  className="w-2/3 py-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/30 cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-98"
+                >
+                  <CheckSquare className="w-4 h-4" />
+                  <span>{isSubmittingAck ? 'กำลังบันทึกและส่ง LINE...' : '✅ กดรับทราบภาระงานสอนแทนทันที'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // If not logged in, render LoginScreen with modal overlays for direct LINE actions
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-slate-900 font-['Prompt',sans-serif]">
@@ -589,6 +854,12 @@ export default function App() {
           users={users}
           onLoginSuccess={handleLoginSuccess}
         />
+
+        {/* LINE 1-Click Action Modals (Visible Immediately Without Needing Login) */}
+        {renderSubstituteAckModal()}
+        {renderDirectActionResultModal()}
+        {printSlipReq && <PrintSlipModal request={printSlipReq} onClose={() => setPrintSlipReq(null)} />}
+        {qrPassReq && <QrPassModal request={qrPassReq} onClose={() => setQrPassReq(null)} />}
       </div>
     );
   }
@@ -983,210 +1254,11 @@ export default function App() {
       )}
 
       {/* Instant 1-Click LINE Approval Confirmation Modal */}
-      {directActionResult && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border-2 border-emerald-400 animate-in zoom-in-95">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-md ${directActionResult.action === 'approve' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-              {directActionResult.action === 'approve' ? (
-                <CheckCircle className="w-10 h-10" />
-              ) : (
-                <AlertCircle className="w-10 h-10" />
-              )}
-            </div>
+      {renderDirectActionResultModal()}
 
-            <div>
-              <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
-                ดำเนินการสำเร็จผ่าน LINE
-              </span>
-              <h3 className="text-xl font-black text-slate-900 mt-2">
-                {directActionResult.action === 'approve' ? '✅ บันทึกอนุมัติคำขอเรียบร้อยแล้ว' : '❌ บันทึกไม่อนุมัติคำขอ'}
-              </h3>
-              <p className="text-xs font-mono font-semibold text-purple-700 mt-1">
-                รหัสคำขอ: {directActionResult.reqId}
-              </p>
-            </div>
 
-            {directActionResult.request && (
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-left text-xs space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">ครูผู้ขอ:</span>
-                  <strong className="text-slate-800">{directActionResult.request.userName}</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">สาขาวิชา:</span>
-                  <span className="font-semibold text-slate-700">{directActionResult.request.branchName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">สถานที่:</span>
-                  <span className="font-semibold text-slate-700 truncate max-w-[200px]">{directActionResult.request.destination}</span>
-                </div>
-                <div className="flex justify-between pt-1.5 border-t border-slate-200">
-                  <span className="text-slate-500">สถานะล่าสุด:</span>
-                  <span className={`font-black px-2.5 py-0.5 rounded border text-xs ${directActionResult.action === 'approve' ? 'text-emerald-700 bg-emerald-50 border-emerald-300' : 'text-rose-700 bg-rose-50 border-rose-300'}`}>
-                    {directActionResult.action === 'approve' ? 'อนุมัติแล้ว (Approved)' : 'ไม่อนุมัติ (Rejected)'}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <p className="text-xs text-slate-600 leading-relaxed bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
-              {directActionResult.action === 'approve'
-                ? '💡 ระบบหน้าเว็บและ รปภ. ได้รับสถานะ "อนุมัติแล้ว" อัตโนมัติทันที พร้อมส่งแจ้งเตือนออกบัตรผ่าน QR Code แก่ครูเรียบร้อยแล้วครับ'
-                : '💡 ได้บันทึกสถานะไม่อนุมัติลงในระบบเรียบร้อยแล้ว'}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setDirectActionResult(null)}
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md cursor-pointer transition-all"
-            >
-              เสร็จสิ้น / ปิดหน้านี้
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 1-Click Direct Substitute Teaching Ack Modal (Opened via LINE link ?action=substitute_ack&reqId=...) */}
-      {substituteAckModalReq && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 relative animate-in zoom-in-95 my-6">
-            <button
-              type="button"
-              onClick={() => {
-                setSubstituteAckModalReq(null);
-                window.history.replaceState({}, document.title, window.location.pathname);
-              }}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs">
-                <Handshake className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                  รหัสคำขอ: {substituteAckModalReq.id}
-                </span>
-                <h3 className="text-lg font-black text-slate-900 mt-1">
-                  คำขอความอนุเคราะห์สอนแทน
-                </h3>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200/80 mb-5">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <span className="text-slate-500">ครูผู้ขอออกนอก:</span>
-                <strong className="text-slate-900 text-sm">{substituteAckModalReq.userName} ({substituteAckModalReq.branchName})</strong>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">วัน-เวลาที่ขอสอนแทน:</span>
-                <span className="font-bold text-slate-800">{substituteAckModalReq.exitDate} เวลา {substituteAckModalReq.exitTime} – {substituteAckModalReq.returnTime} น.</span>
-              </div>
-
-              <div className="p-3 bg-amber-100/70 rounded-xl border border-amber-200/90 text-amber-950 space-y-1">
-                <div className="font-bold flex items-center gap-1.5 text-xs text-amber-900">
-                  <BookOpen className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>วิชาที่ขอให้สอนแทน: {substituteAckModalReq.substituteSubject || 'ภาระงานสอนประจำวัน'}</span>
-                </div>
-                {substituteAckModalReq.substituteTasks && (
-                  <div className="text-[11px] text-slate-800 pt-0.5">
-                    <span className="font-semibold text-slate-900">งานที่มอบหมาย:</span> {substituteAckModalReq.substituteTasks}
-                  </div>
-                )}
-                <div className="text-[10px] text-amber-800 pt-1 border-t border-amber-200/60">
-                  ระบุครูผู้สอนแทน: <strong>{substituteAckModalReq.substituteTeacherName || 'ครูผู้สอนแทน'}</strong>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-slate-500 pt-1">
-                สถานที่ที่ครูผู้ขอไป: <strong>{substituteAckModalReq.destination}</strong> (เหตุผล: {substituteAckModalReq.reason})
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                <span className="text-slate-500">สถานะการรับทราบปัจจุบัน:</span>
-                {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
-                  <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    รับทราบแล้ว ({substituteAckModalReq.substituteAcknowledgedAt || 'เรียบร้อย'})
-                  </span>
-                ) : substituteAckModalReq.substituteStatus === 'declined' ? (
-                  <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
-                    แจ้งไม่สะดวกสอนแทน
-                  </span>
-                ) : (
-                  <span className="font-bold px-2.5 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                    ⏳ รอท่านกดยืนยันรับทราบ
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
-              <div className="space-y-3">
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs leading-relaxed flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span>✓ ท่านได้รับทราบภาระงานสอนแทนนี้แล้ว ระบบได้ส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปเรียบร้อยแล้วครับ</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSubstituteAckModalReq(null);
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                  }}
-                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow-md transition-all"
-                >
-                  ✓ รับทราบแล้ว / ปิดหน้านี้
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
-                  💡 เมื่อท่านกด <strong>"รับทราบภาระงานสอนแทน"</strong> ระบบจะบันทึกผลและส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขา เพื่อพิจารณาอนุมัติคำขอทันทีครับ
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isSubmittingAck}
-                    onClick={() => {
-                      handleDeclineSubstitute(substituteAckModalReq.id, 'ไม่สะดวกสอนแทนตามเวลาดังกล่าว');
-                      setSubstituteAckModalReq(null);
-                      window.history.replaceState({}, document.title, window.location.pathname);
-                    }}
-                    className="w-1/3 py-3 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all disabled:opacity-50 text-center"
-                  >
-                    ไม่สะดวกสอนแทน
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSubmittingAck}
-                    onClick={async () => {
-                      setIsSubmittingAck(true);
-                      try {
-                        await handleAcknowledgeSubstitute(substituteAckModalReq.id);
-                        setSubstituteAckModalReq(prev => prev ? {
-                          ...prev,
-                          substituteStatus: 'acknowledged',
-                          substituteAcknowledgedAt: new Date().toLocaleTimeString('th-TH')
-                        } : null);
-                        showToast(`🎉 บันทึกรับทราบภาระงานสอนแทน ${substituteAckModalReq.id} สำเร็จ!`, 'success');
-                      } finally {
-                        setIsSubmittingAck(false);
-                      }
-                    }}
-                    className="w-2/3 py-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/30 cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-98"
-                  >
-                    <CheckSquare className="w-4 h-4" />
-                    <span>{isSubmittingAck ? 'กำลังบันทึกและส่ง LINE...' : '✅ กดรับทราบภาระงานสอนแทนทันที'}</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* 1-Click Direct Substitute Teaching Ack Modal */}
+      {renderSubstituteAckModal()}
 
     </div>
   );

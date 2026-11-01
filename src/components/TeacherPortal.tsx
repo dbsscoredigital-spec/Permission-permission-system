@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, ExitRequest, Branch } from '../types';
 import { 
   FileText, 
@@ -57,8 +57,24 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   onApprove
 }) => {
   // Active Tab in Teacher Portal: 'create' | 'my-requests' | 'substitute-tasks'
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'my-requests' | 'substitute-tasks'>('create');
+  const urlReqId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('reqId') : null;
+  const urlAction = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('action') : null;
+  const urlSubtab = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('subtab') : null;
+
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'my-requests' | 'substitute-tasks'>(() => {
+    if (urlAction === 'substitute_ack' || urlAction === 'sub_ack' || urlAction === 'substitute' || urlSubtab === 'substitute-tasks') {
+      return 'substitute-tasks';
+    }
+    return 'create';
+  });
   const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  // If URL changes with substitute params, auto-switch to substitute-tasks tab
+  useEffect(() => {
+    if (urlAction === 'substitute_ack' || urlAction === 'sub_ack' || urlAction === 'substitute' || urlSubtab === 'substitute-tasks') {
+      setActiveSubTab('substitute-tasks');
+    }
+  }, [urlAction, urlSubtab]);
 
   // Form State
   const today = new Date().toISOString().slice(0, 10);
@@ -89,7 +105,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       rawHref = rawHref.replace(/\/index\.html$/i, '');
       baseAppUrl = rawHref.endsWith('/') ? rawHref : `${rawHref}/`;
     }
-    const subAckUrl = `${baseAppUrl}?action=substitute_ack&reqId=${encodeURIComponent(req.id || '')}`;
+    const subAckUrl = `${baseAppUrl}?action=substitute_ack&reqId=${encodeURIComponent(req.id || '')}&subtab=substitute-tasks`;
     const text = `🔔 ขอความอนุเคราะห์สอนแทน (วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์)
 เรียน: ${req.substituteTeacherName || 'ครูผู้สอนแทน'}
 จาก: ${req.userName || currentUser.name} (${req.branchName || currentUser.branchName})
@@ -160,12 +176,16 @@ ${subAckUrl}`;
   const rejectedRequests = displayRequests.filter(r => r.status === 'rejected');
 
   // Total substitute requests across entire college
-  const allSubstituteRequestsInCollege = requests.filter(r => Boolean(r.hasClasses));
+  const allSubstituteRequestsInCollege = requests.filter(r => 
+    Boolean(r.hasClasses === true || String(r.hasClasses).toLowerCase() === 'true' || r.substituteTeacherName)
+  );
   const allPendingSubstituteInCollege = allSubstituteRequestsInCollege.filter(r => r.substituteStatus === 'pending');
 
-  // Substitute requests assigned to current user (or all if scope is 'all' or user is admin)
+  // Substitute requests assigned to current user (or all if scope is 'all' or user is admin, or matching URL reqId)
   const substituteRequestsForMe = requests.filter(r => {
-    if (!r.hasClasses) return false;
+    const hasClassFlag = r.hasClasses === true || String(r.hasClasses).toLowerCase() === 'true' || Boolean(r.substituteTeacherName);
+    if (!hasClassFlag) return false;
+    if (urlReqId && r.id && r.id.toLowerCase() === urlReqId.toLowerCase()) return true;
     if (substituteScope === 'all' || currentUser.role === 'admin') return true;
     if (r.substituteTeacherId && r.substituteTeacherId === currentUser.id) return true;
     if (r.substituteTeacherName && norm(r.substituteTeacherName) === norm(currentUser.name)) return true;

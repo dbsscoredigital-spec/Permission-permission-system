@@ -123,6 +123,7 @@ export default function App() {
 
           const constructedReq: ExitRequest = {
             id: reqId,
+            submittedAt: found?.submittedAt || new Date().toISOString(),
             userName: isReal(urlUserName) ? urlUserName!.trim() : (found?.userName || 'ครูผู้ยื่นคำขอ'),
             userId: p.get('uid') || found?.userId || '',
             branchName: p.get('b') || found?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
@@ -393,6 +394,7 @@ export default function App() {
           // Construct complete authentic request from URL parameters
           const constructedReq: ExitRequest = {
             id: reqId,
+            submittedAt: found?.submittedAt || new Date().toISOString(),
             userName: isReal(urlParams.get('u')) ? urlParams.get('u')!.trim() : (found?.userName || 'ครูผู้ยื่นคำขอ'),
             userId: urlParams.get('uid') || found?.userId || '',
             branchName: urlParams.get('b') || found?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',

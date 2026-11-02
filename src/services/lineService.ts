@@ -481,10 +481,24 @@ export class LineService {
       }
     }
 
-    // หากเชื่อมต่อ Google Apps Script ไว้ ตัว Apps Script จัดการส่ง Flex แจ้งผลให้ครูเรียบร้อยแล้ว (ไม่ส่งซ้ำจากเว็บ)
-    const settings = storage.getSettings();
-    if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.startsWith('http') && settings.autoSyncWithGoogleSheet) {
-      return { success: true, message: 'Google Apps Script ส่ง LINE Flex แจ้งผลให้ครูผู้ขอเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
+    // Branch fallback if teacher LINE ID was not found by direct lookup
+    if (!teacherLineId || !teacherLineId.trim().startsWith('U') || teacherLineId.startsWith('U_')) {
+      const b = (req.branchName || req.branchId || '').toLowerCase();
+      if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') {
+        teacherLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
+      } else if (b.includes('กล') || b === 'me') {
+        teacherLineId = 'U9474d32fb566bbfafc743b4511d46f9d';
+      } else if (b.includes('บัญชี') || b === 'ac') {
+        teacherLineId = 'Ue74d275282ab6b5d5c5264188503631d';
+      } else if (b.includes('ยนต์') || b === 'at') {
+        teacherLineId = 'U2529aae8c76082a8840d01549220f589';
+      } else if (b.includes('ไฟฟ้า') || b === 'el') {
+        teacherLineId = 'U6e2636be42c9019262e42e4312a687f9';
+      } else if (b.includes('สามัญ') || b === 'gen') {
+        teacherLineId = 'U38934e344a242b1a8a7741c7ff043895';
+      } else {
+        teacherLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // Default fallback
+      }
     }
 
     if (teacherLineId && teacherLineId.trim().startsWith('U') && !teacherLineId.startsWith('U_')) {
@@ -610,13 +624,35 @@ export class LineService {
         footer: {
           type: 'box',
           layout: 'vertical',
+          spacing: 'xs',
           contents: [
+            isApproved ? {
+              type: 'button',
+              style: 'primary',
+              color: '#059669',
+              height: 'sm',
+              action: {
+                type: 'uri',
+                label: '🎫 ดูบัตรผ่าน QR Code ของฉัน',
+                uri: `https://dbsscoredigital-spec.github.io/Permission-permission-system/?action=view_pass&reqId=${encodeURIComponent(req.id)}`
+              }
+            } : {
+              type: 'button',
+              style: 'secondary',
+              height: 'sm',
+              action: {
+                type: 'uri',
+                label: '🌐 เปิดดูในระบบเว็บ',
+                uri: 'https://dbsscoredigital-spec.github.io/Permission-permission-system/'
+              }
+            },
             {
               type: 'text',
               text: `แจ้งเตือนเมื่อ: ${new Date().toLocaleTimeString('th-TH')} น.`,
               size: 'xxs',
               color: '#94a3b8',
-              align: 'center'
+              align: 'center',
+              margin: 'xs'
             }
           ]
         }

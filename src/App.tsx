@@ -1003,6 +1003,7 @@ export default function App() {
             onViewQrPass={(req) => setQrPassReq(req)}
             onPrintSlip={(req) => setPrintSlipReq(req)}
             onAcknowledgeSubstitute={handleAcknowledgeSubstitute}
+            onDeleteRequest={handleDeleteRequest}
           />
         )}
 

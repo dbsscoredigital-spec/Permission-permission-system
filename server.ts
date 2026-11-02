@@ -1554,13 +1554,19 @@ async function startServer() {
   app.post('/api/requests/:id/substitute', (req, res) => {
     try {
       const { id } = req.params;
-      const { substituteStatus, teacherId, teacherName, declineReason, timestamp } = req.body;
+      const { substituteStatus, teacherId, teacherName, declineReason, timestamp, requestData } = req.body;
       const thaiTimestamp = timestamp || getThaiTimestamp();
 
       const idx = serverStore.requests.findIndex(r => r.id === id);
       let updated: any = null;
 
       if (idx !== -1) {
+        if (requestData && typeof requestData === 'object') {
+          serverStore.requests[idx] = {
+            ...serverStore.requests[idx],
+            ...requestData
+          };
+        }
         serverStore.requests[idx].substituteStatus = substituteStatus;
         if (substituteStatus === 'acknowledged') {
           serverStore.requests[idx].substituteAcknowledgedAt = thaiTimestamp;
@@ -1570,14 +1576,16 @@ async function startServer() {
         }
         updated = serverStore.requests[idx];
       } else {
+        const base = (requestData && typeof requestData === 'object') ? requestData : {};
         const fallback = sanitizeRequest({
+          ...base,
           id,
-          userName: 'ครูผู้ขอ',
-          branchName: 'ช่างกลโรงงาน',
+          userName: base.userName || 'ครูผู้ขอ',
+          branchName: base.branchName || 'ธุรกิจดิจิทัล',
           status: 'pending',
           hasClasses: true,
-          substituteTeacherId: teacherId,
-          substituteTeacherName: teacherName,
+          substituteTeacherId: teacherId || base.substituteTeacherId,
+          substituteTeacherName: teacherName || base.substituteTeacherName,
           substituteStatus,
           substituteAcknowledgedAt: substituteStatus === 'acknowledged' ? thaiTimestamp : undefined,
           substituteDeclineReason: substituteStatus === 'declined' ? declineReason : undefined

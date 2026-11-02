@@ -782,7 +782,8 @@ export class StorageService {
           substituteStatus: 'acknowledged',
           teacherId,
           teacherName,
-          timestamp: thaiTimestamp
+          timestamp: thaiTimestamp,
+          requestData: updated
         })
       }).catch(() => {});
     } catch {}

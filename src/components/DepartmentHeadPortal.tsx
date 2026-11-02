@@ -27,7 +27,8 @@ import {
   Filter,
   Users,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { StorageService } from '../services/storageService';
@@ -44,6 +45,7 @@ interface DepartmentHeadPortalProps {
   onViewQrPass: (req: ExitRequest) => void;
   onPrintSlip: (req: ExitRequest) => void;
   onAcknowledgeSubstitute?: (requestId: string) => void;
+  onDeleteRequest?: (requestId: string) => void;
 }
 
 export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
@@ -56,12 +58,24 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   onSubmitRequest,
   onViewQrPass,
   onPrintSlip,
-  onAcknowledgeSubstitute
+  onAcknowledgeSubstitute,
+  onDeleteRequest
 }) => {
   // History filter state (Strictly scoped to Department Head's own branch only)
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
   const [syncingLine, setSyncingLine] = useState<boolean>(false);
+  const [requestToDelete, setRequestToDelete] = useState<ExitRequest | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (!requestToDelete) return;
+    if (onDeleteRequest) {
+      onDeleteRequest(requestToDelete.id);
+    } else {
+      StorageService.getInstance().deleteRequest(requestToDelete.id, currentUser);
+    }
+    setRequestToDelete(null);
+  };
 
   const handleManualSyncLine = async () => {
     setSyncingLine(true);
@@ -454,14 +468,25 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onPrintSlip(req)}
-                            className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-slate-500" />
-                            <span>พิมพ์ใบขออนุญาต</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onPrintSlip(req)}
+                              className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-slate-500" />
+                              <span>พิมพ์ใบขออนุญาต</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRequestToDelete(req)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg font-medium cursor-pointer transition-colors"
+                              title="ลบคำขอนี้"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>ลบคำขอ</span>
+                            </button>
+                          </div>
                           <button
                             type="button"
                             onClick={() => onViewQrPass(req)}
@@ -683,14 +708,25 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onPrintSlip(req)}
-                          className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-slate-500" />
-                          <span>พิมพ์ใบขออนุญาต</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onPrintSlip(req)}
+                            className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                            <span>พิมพ์ใบขออนุญาต</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRequestToDelete(req)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg font-medium cursor-pointer transition-colors"
+                            title="ลบคำขอนี้"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>ลบคำขอ</span>
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => onViewQrPass(req)}
@@ -1509,6 +1545,62 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Confirmation Modal */}
+      {requestToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 text-center mb-1">
+              ยืนยันการลบคำขอออกนอกสถานศึกษา
+            </h3>
+            <p className="text-xs text-slate-500 text-center mb-4">
+              ท่านต้องการลบคำขอเลขที่ <strong className="text-slate-800">{requestToDelete.id}</strong> ออกจากระบบหรือไม่?
+            </p>
+
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5 text-slate-700 mb-5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">ผู้ขอ:</span>
+                <span className="font-bold text-slate-900">{requestToDelete.userName} ({requestToDelete.position})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">วัน-เวลา:</span>
+                <span className="font-medium text-slate-800">{requestToDelete.exitDate} ({requestToDelete.exitTime} – {requestToDelete.returnTime} น.)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สถานที่:</span>
+                <span className="font-medium text-slate-800 truncate max-w-[200px]">{requestToDelete.destination}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">สถานะ:</span>
+                <span className={`font-bold ${requestToDelete.status === 'approved' ? 'text-emerald-700' : requestToDelete.status === 'pending' ? 'text-amber-700' : 'text-rose-700'}`}>
+                  {requestToDelete.status === 'approved' ? 'อนุมัติแล้ว' : requestToDelete.status === 'pending' ? 'รออนุมัติ' : 'ไม่อนุมัติ'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setRequestToDelete(null)}
+                className="w-1/2 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 cursor-pointer transition-all"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="w-1/2 py-2.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-sm shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ยืนยันลบคำขอ</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

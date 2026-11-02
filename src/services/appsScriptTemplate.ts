@@ -1204,13 +1204,35 @@ function sendLineNotificationToTeacher(req) {
       footer: {
         type: "box",
         layout: "vertical",
+        spacing: "xs",
         contents: [
+          isApproved ? {
+            type: "button",
+            style: "primary",
+            color: "#059669",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "🎫 ดูบัตรผ่าน QR Code ของฉัน",
+              uri: "https://dbsscoredigital-spec.github.io/Permission-permission-system/?action=view_pass&reqId=" + encodeURIComponent(req.id)
+            }
+          } : {
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "🌐 เปิดดูในระบบเว็บ",
+              uri: "https://dbsscoredigital-spec.github.io/Permission-permission-system/"
+            }
+          },
           {
             type: "text",
             text: "แจ้งเตือนอัตโนมัติจากระบบขออนุญาตออกนอกสถานศึกษา",
             size: "xxs",
             color: "#94a3b8",
-            align: "center"
+            align: "center",
+            margin: "xs"
           }
         ]
       }

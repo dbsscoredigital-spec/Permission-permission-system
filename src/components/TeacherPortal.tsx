@@ -106,32 +106,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       baseAppUrl = rawHref.endsWith('/') ? rawHref : `${rawHref}/`;
     }
 
-    const params = new URLSearchParams({
-      action: 'substitute_ack',
-      subtab: 'substitute-tasks',
-      reqId: String(req.id || '').trim(),
-      u: String(req.userName || currentUser.name || '').trim(),
-      uid: String(req.userId || currentUser.id || '').trim(),
-      b: String(req.branchName || currentUser.branchName || '').trim(),
-      bid: String(req.branchId || currentUser.branchId || '').trim(),
-      pos: String(req.position || currentUser.position || 'ครูผู้สอน').trim(),
-      d: String(req.destination || '').trim(),
-      r: String(req.reason || '').trim(),
-      date: String(req.exitDate || today).trim(),
-      exit: String(req.exitTime || '10:30').trim(),
-      ret: String(req.returnTime || '12:00').trim(),
-      sub: String(req.substituteTeacherName || '').trim(),
-      subId: String(req.substituteTeacherId || '').trim(),
-      subj: String(req.substituteSubject || 'ภาระงานสอนประจำวัน').trim(),
-      tasks: String(req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย').trim(),
-      appr: String(req.assignedApproverName || autoApproverName || 'หัวหน้าสาขาวิชา').trim(),
-      apprId: String(req.assignedApproverId || '').trim(),
-      apprLine: String(req.assignedApproverLineId || (currentBranch ? currentBranch.approverUserId : '') || '').trim(),
-      uline: String(req.userLineId || (req as any).teacherLineId || currentUser.lineId || '').trim(),
-      notes: String(req.notes || '').trim()
-    });
-
-    const subAckUrl = `${baseAppUrl}?${params.toString()}`;
+    const cleanReqId = String(req.id || '').trim();
+    const subAckUrl = `${baseAppUrl}?action=sub_ack&reqId=${encodeURIComponent(cleanReqId)}`;
     const text = `🔔 ขอความอนุเคราะห์สอนแทน (วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์)
 เรียน: ${req.substituteTeacherName || 'ครูผู้สอนแทน'}
 จาก: ${req.userName || currentUser.name} (${req.branchName || currentUser.branchName})
@@ -139,7 +115,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
 📚 รายวิชา: ${req.substituteSubject || 'ภาระงานประจำวัน'}
 📝 งานที่มอบหมาย: ${req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย'}
 
-📌 กรุณากดลิงก์นี้เพื่อเข้าสู่ระบบและกด "รับทราบภาระงานสอนแทน" เพื่อส่งต่อให้หัวหน้าสาขาพิจารณาอนุมัติต่อไปครับ:
+👉 กดรับทราบภาระงานสอนแทน:
 ${subAckUrl}`;
     const shareUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
     window.open(shareUrl, '_blank');

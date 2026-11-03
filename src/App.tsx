@@ -457,7 +457,7 @@ export default function App() {
 
       // 3. Send LINE notification to approver in background (never blocks UI or reverts status)
       try {
-        const lineRes = await lineService.sendApproverNotification(updated);
+        const lineRes = await lineService.sendApproverNotification(updated, true);
         refreshAllData();
         const approverTitle = updated.assignedApproverId === 'usr-admin' ? 'รอง ผอ.ฝ่ายวิชาการ' : 'หัวหน้าสาขา';
         if (lineRes.success) {

@@ -843,6 +843,12 @@ function handleSubstituteAck(req) {
     ]);
   }
 
+  // ปลดล็อกแคชเพื่อให้ส่ง Flex หาหัวหน้าสาขาได้แน่นอนเมื่อครูสอนแทนกดรับทราบ
+  try {
+    const scriptCache = CacheService.getScriptCache();
+    if (scriptCache) scriptCache.remove("lock_approver_flex_" + String(req && req.id || "").trim());
+  } catch(e) {}
+
   // ส่ง LINE Flex ข้อความแจ้งเตือนหาหัวหน้าสาขาทันทีเมื่อครูสอนแทนกดรับทราบแล้ว
   sendLineFlexMessageToApprover(req);
 

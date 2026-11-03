@@ -502,6 +502,181 @@ async function startServer() {
     }
   };
 
+  // Helper to build LINE Flex Message payload for Approver (Message 1 of 2)
+  const buildApproverFlexPayload = (req: any) => {
+    const tunnel = getTunnelUrl();
+    const baseUrl = (tunnel && tunnel.startsWith('http')) 
+      ? tunnel.replace(/\/$/, '') 
+      : (serverStore.settings.appUrl && serverStore.settings.appUrl.startsWith('http')
+          ? serverStore.settings.appUrl.replace(/\/$/, '')
+          : 'https://ais-dev-b5n74ksxlz6u3o5szrquja-431414357592.asia-east1.run.app');
+    
+    let gasUrl = serverStore.settings.googleAppsScriptUrl || '';
+    if (!gasUrl) {
+      gasUrl = 'https://script.google.com/macros/s/AKfycbzxJTWNOzZhMzCmLvDlRzFvFGUv36l9Perv2hfWJ9svhrkuCBJDuwWfiUw7Nn6iroNmUg/exec';
+    }
+
+    const primaryApproveUrl = gasUrl ? `${gasUrl}?action=approve&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=approve&reqId=${encodeURIComponent(req.id)}`;
+    const primaryRejectUrl = gasUrl ? `${gasUrl}?action=reject&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=reject&reqId=${encodeURIComponent(req.id)}`;
+    const inAppViewUrl = `${baseUrl}?action=direct_approve&reqId=${encodeURIComponent(req.id)}`;
+
+    return {
+      type: 'flex',
+      altText: `🔔 มีคำขออนุญาตออกนอกสถานศึกษา (${req.id}): ${req.userName || '-'} (${req.branchName || '-'})`,
+      contents: {
+        type: 'bubble',
+        size: 'mega',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#059669',
+          paddingAll: '16px',
+          contents: [
+            { type: 'text', text: '🔔 มีคำขออนุญาตออกนอกสถานศึกษา', weight: 'bold', size: 'md', color: '#ffffff' },
+            { type: 'text', text: `รหัสคำขอ: ${req.id}`, size: 'xs', color: '#d1fae5', margin: 'xs' }
+          ]
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'md',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👨‍🏫 ผู้ขอ:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.userName || '-', size: 'sm', weight: 'bold', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🏫 สาขา:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.branchName || '-', size: 'sm', weight: 'bold', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📅 วันที่:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.exitDate || '-', size: 'sm', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🕐 เวลา:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: `${req.exitTime || ''} – ${req.returnTime || ''} น.`, size: 'sm', color: '#0f172a', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📍 สถานที่:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.destination || '-', size: 'sm', color: '#0f172a', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📝 เหตุผล:', size: 'sm', color: '#64748b', flex: 2 },
+                { type: 'text', text: req.reason || '-', size: 'sm', color: '#0f172a', flex: 5, wrap: true }
+              ]
+            },
+            (req.hasClasses || req.substituteTeacherName) ? {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#fef3c7',
+              cornerRadius: '8px',
+              paddingAll: '10px',
+              spacing: 'xs',
+              contents: [
+                { type: 'text', text: '📚 ข้อมูลภาระงานสอนแทน (รับทราบแล้ว)', weight: 'bold', size: 'xs', color: '#92400e' },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '👨‍🏫 ผู้สอนแทน:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: `${req.substituteTeacherName || 'ระบุครูสอนแทน'} (✅ รับทราบในระบบแล้ว)`, size: 'xs', weight: 'bold', color: '#065f46', flex: 5, wrap: true }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '📖 รายวิชา:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: req.substituteSubject || 'ภาระงานสอนประจำวัน', size: 'xs', weight: 'bold', color: '#0f172a', flex: 5, wrap: true }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    { type: 'text', text: '📝 งานที่มอบหมาย:', size: 'xs', color: '#78350f', flex: 3 },
+                    { type: 'text', text: req.substituteTasks || 'ตามที่ได้ประสานงานมอบหมาย', size: 'xs', color: '#0f172a', flex: 5, wrap: true }
+                  ]
+                }
+              ]
+            } : {
+              type: 'text',
+              text: '✓ ไม่มีคาบสอนในช่วงเวลาดังกล่าว',
+              size: 'xs',
+              color: '#059669'
+            }
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              spacing: 'sm',
+              contents: [
+                {
+                  type: 'button',
+                  style: 'primary',
+                  color: '#16a34a',
+                  height: 'sm',
+                  action: { type: 'uri', label: '✅ กดอนุมัติทันที', uri: primaryApproveUrl }
+                },
+                {
+                  type: 'button',
+                  style: 'primary',
+                  color: '#dc2626',
+                  height: 'sm',
+                  action: { type: 'uri', label: '❌ ไม่อนุมัติ', uri: primaryRejectUrl }
+                }
+              ]
+            },
+            {
+              type: 'button',
+              style: 'secondary',
+              height: 'sm',
+              action: { type: 'uri', label: '🌐 เปิดดูในระบบเว็บ', uri: inAppViewUrl }
+            },
+            {
+              type: 'text',
+              text: `แจ้งเตือนเมื่อ: ${getThaiTimestamp()} น.`,
+              size: 'xxs',
+              color: '#94a3b8',
+              align: 'center',
+              margin: 'xs'
+            }
+          ]
+        }
+      }
+    };
+  };
+
   // Forward update to Google Apps Script if configured
   const forwardToAppsScript = async (action: string, payload: any) => {
     const gasUrl = serverStore.settings.googleAppsScriptUrl;
@@ -1613,6 +1788,47 @@ async function startServer() {
 
       // Forward to Google Apps Script
       forwardToAppsScript('substitute_ack', updated);
+
+      // Dispatch LINE Flex Message directly to Department Head when substitute acknowledges
+      if (substituteStatus === 'acknowledged' && updated) {
+        const token = getEffectiveToken();
+        let approverLineId = updated.assignedApproverLineId;
+        if (!approverLineId || !approverLineId.startsWith('U')) {
+          const approverName = updated.assignedApproverName || '';
+          const APPROVER_NAME_MAP: Record<string, string> = {
+            'นายศรายุทธ สมสุข': 'U81778d734346f14e047e07cb37d1ccd1',
+            'นายคัมภีร์ ช่วยเพชร': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
+            'นางสาวอรอนงค์ ขุนทองแก้ว': 'U84c5267a9feee6f8968d324a3c79c4af',
+            'นางนฤมล เรืองพุฒ': 'U013dfdf06ab0c66db7d898540077d80e',
+            'นายฉัตรชัย ดิษฐาน': 'U00d0bcb58a525b4a9e29999ddd8c8246',
+            'นางกนกวรรณ ธนาพล': 'U0b1a90a74dacb8fbb2be07d19189932c'
+          };
+          for (const k of Object.keys(APPROVER_NAME_MAP)) {
+            if (approverName.includes(k) || k.includes(approverName)) {
+              approverLineId = APPROVER_NAME_MAP[k];
+              break;
+            }
+          }
+        }
+        if (!approverLineId || !approverLineId.startsWith('U')) {
+          const b = String(updated.branchName || updated.branchId || '').toLowerCase();
+          if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
+          else if (b.includes('กล') || b === 'me') approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
+          else if (b.includes('บัญชี') || b === 'ac') approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af';
+          else if (b.includes('ไฟฟ้า') || b === 'el') approverLineId = 'U013dfdf06ab0c66db7d898540077d80e';
+          else if (b.includes('ยนต์') || b === 'at') approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246';
+          else if (b.includes('สามัญ') || b === 'gen') approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c';
+          else approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
+        }
+
+        if (token && approverLineId && approverLineId.startsWith('U')) {
+          console.log(`[api/requests/substitute] Pushing approver LINE Flex to ${approverLineId} for req ${id}...`);
+          const approverFlex = buildApproverFlexPayload(updated);
+          pushToLine(token, approverLineId, [approverFlex]).catch(e =>
+            console.error('Error pushing approver flex from substitute ack endpoint:', e)
+          );
+        }
+      }
 
       return res.json({ success: true, request: updated });
     } catch (err: any) {

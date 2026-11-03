@@ -86,10 +86,15 @@ export class LineService {
   /**
    * Call backend /api/line/push to deliver real LINE messages
    */
+  /**
+   * Call backend /api/line/push to deliver real LINE messages
+   * Supports both Express backend (/api/line/push) and Google Apps Script Web App fallback
+   */
   public async pushToLineBackend(
     to: string,
     messages: any[],
-    customToken?: string
+    customToken?: string,
+    reqId?: string
   ): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
     try {
       const storage = StorageService.getInstance();
@@ -116,6 +121,8 @@ export class LineService {
         };
       }
 
+      const targetTo = to.trim();
+
       // 1. Try Express backend server endpoint first (if running in full-stack dev/prod container)
       try {
         const res = await fetch('/api/line/push', {
@@ -123,7 +130,7 @@ export class LineService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             token,
-            to: to.trim(),
+            to: targetTo,
             messages
           })
         });
@@ -139,11 +146,16 @@ export class LineService {
         // Expected when running on static hosts like GitHub Pages where /api/line/push doesn't exist
       }
 
-      // 2. Fallback for GitHub Pages static sites: Dispatch directly through Google Apps Script Web App (ส่งเพียง 1 ครั้งเท่านั้น)
+      // 2. Dispatch through Google Apps Script Web App (Works 100% on GitHub Pages static sites)
       const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
       if (gasUrl && gasUrl.startsWith('http')) {
         try {
-          // POST to Google Apps Script - ส่งเพียง 1 ครั้ง ไม่ส่งเบิ้ล
+          const msgsJson = JSON.stringify(messages);
+          // A) Dispatch via GET (Bypasses all CORS preflight limitations on static hosting)
+          const getUrl = `${gasUrl}?action=push_line&to=${encodeURIComponent(targetTo)}&token=${encodeURIComponent(token)}&messages=${encodeURIComponent(msgsJson)}${reqId ? `&reqId=${encodeURIComponent(reqId)}` : ''}`;
+          fetch(getUrl, { mode: 'no-cors' }).catch(() => {});
+
+          // B) Also dispatch via POST for redundancy
           fetch(gasUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -152,8 +164,9 @@ export class LineService {
               action: 'push_line',
               payload: {
                 token,
-                to: to.trim(),
-                messages
+                to: targetTo,
+                messages,
+                reqId
               }
             })
           }).catch(() => {});
@@ -300,11 +313,11 @@ export class LineService {
 
   /**
    * Message 1 of 2: Sent to Department Head (Approver)
-   * Also attempts real push if approver has a configured lineId
+   * Dispatches real LINE Flex Message directly to the department head or branch approver
    */
-  public async sendApproverNotification(req: ExitRequest): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
-    // กฎเหล็ก: คำขอ 1 รายการ ส่ง Flex ให้หัวหน้าเพียง 1 ครั้งเท่านั้น ป้องกันการส่งเบิ้ล 100%
-    if (this.sentApproverCache.has(req.id)) {
+  public async sendApproverNotification(req: ExitRequest, force: boolean = false): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
+    // กฎเหล็ก: คำขอ 1 รายการ ส่ง Flex ให้หัวหน้าเพียง 1 ครั้งเท่านั้น ป้องกันการส่งเบิ้ล 100% (เว้นแต่ force = true เมื่อครูสอนแทนกดรับทราบ)
+    if (!force && this.sentApproverCache.has(req.id)) {
       return { success: true, message: 'ส่งการแจ้งเตือนไปยังหัวหน้าเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
     }
     this.sentApproverCache.add(req.id);
@@ -335,8 +348,33 @@ export class LineService {
     let approverLineId = req.assignedApproverLineId;
     if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
       const users = storage.getUsers();
-      const approverUser = users.find(u => u.id === req.assignedApproverId || (u.branchId === req.branchId && u.role === 'approver'));
-      approverLineId = approverUser?.lineId;
+      const approverUser = users.find(u => 
+        (req.assignedApproverId && u.id === req.assignedApproverId) ||
+        (req.assignedApproverName && u.name === req.assignedApproverName) ||
+        (u.branchId === req.branchId && u.role === 'approver')
+      );
+      if (approverUser?.lineId && approverUser.lineId.trim().startsWith('U') && !approverUser.lineId.startsWith('U_')) {
+        approverLineId = approverUser.lineId.trim();
+      }
+    }
+
+    // Name-based mapping for guaranteed approver LINE IDs
+    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
+      const aName = (req.assignedApproverName || '').trim();
+      const APPROVER_NAME_MAP: Record<string, string> = {
+        'นายศรายุทธ สมสุข': 'U81778d734346f14e047e07cb37d1ccd1',
+        'นายคัมภีร์ ช่วยเพชร': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
+        'นางสาวอรอนงค์ ขุนทองแก้ว': 'U84c5267a9feee6f8968d324a3c79c4af',
+        'นางนฤมล เรืองพุฒ': 'U013dfdf06ab0c66db7d898540077d80e',
+        'นายฉัตรชัย ดิษฐาน': 'U00d0bcb58a525b4a9e29999ddd8c8246',
+        'นางกนกวรรณ ธนาพล': 'U0b1a90a74dacb8fbb2be07d19189932c'
+      };
+      for (const k of Object.keys(APPROVER_NAME_MAP)) {
+        if (aName.includes(k) || k.includes(aName)) {
+          approverLineId = APPROVER_NAME_MAP[k];
+          break;
+        }
+      }
     }
 
     // Branch-based guarantee for approver
@@ -359,18 +397,9 @@ export class LineService {
       }
     }
 
-    // หากเชื่อมต่อกับ Google Apps Script ไว้ ตัว Apps Script จะเป็นผู้ส่ง Flex Message ให้เองอัตโนมัติ 1 ข้อความ (ไม่ส่งซ้ำจากฝั่งเว็บ)
-    const settings = storage.getSettings();
-    if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.startsWith('http') && settings.autoSyncWithGoogleSheet) {
-      return {
-        success: true,
-        message: 'Google Apps Script ส่ง LINE Flex ให้หัวหน้าเรียบร้อยแล้ว (ไม่ส่งซ้ำ)'
-      };
-    }
-
-    // Send ONLY the Flex message (no trailing text message)
+    // Build and push real LINE Flex Message to approver immediately
     const flexPayload = this.generateLineFlexMessagePayload(req);
-    return await this.pushToLineBackend(approverLineId, [flexPayload]);
+    return await this.pushToLineBackend(approverLineId, [flexPayload], undefined, req.id);
   }
 
   /**
@@ -703,7 +732,7 @@ export class LineService {
 
     return {
       type: 'flex',
-      altText: `🔔 คำขอออกนอกสถานศึกษา: ${req.userName} (${req.branchName})`,
+      altText: `🔔 คำขอออกนอกสถานศึกษา (${req.id}): ${req.userName} (${req.branchName})`,
       contents: {
         type: 'bubble',
         size: 'mega',

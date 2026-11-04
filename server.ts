@@ -562,7 +562,7 @@ async function startServer() {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '📅 วันที่:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: req.exitDate || '-', size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: formatSheetDate(req.exitDate) || '-', size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {
@@ -570,7 +570,7 @@ async function startServer() {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '🕐 เวลา:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: `${req.exitTime || ''} – ${req.returnTime || ''} น.`, size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: `${formatSheetTime(req.exitTime)} – ${formatSheetTime(req.returnTime)} น.`, size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {
@@ -1792,33 +1792,30 @@ async function startServer() {
       // Dispatch LINE Flex Message directly to Department Head when substitute acknowledges
       if (substituteStatus === 'acknowledged' && updated) {
         const token = getEffectiveToken();
-        let approverLineId = updated.assignedApproverLineId;
-        if (!approverLineId || !approverLineId.startsWith('U')) {
-          const approverName = updated.assignedApproverName || '';
-          const APPROVER_NAME_MAP: Record<string, string> = {
-            'นายศรายุทธ สมสุข': 'U81778d734346f14e047e07cb37d1ccd1',
-            'นายคัมภีร์ ช่วยเพชร': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
-            'นางสาวอรอนงค์ ขุนทองแก้ว': 'U84c5267a9feee6f8968d324a3c79c4af',
-            'นางนฤมล เรืองพุฒ': 'U013dfdf06ab0c66db7d898540077d80e',
-            'นายฉัตรชัย ดิษฐาน': 'U00d0bcb58a525b4a9e29999ddd8c8246',
-            'นางกนกวรรณ ธนาพล': 'U0b1a90a74dacb8fbb2be07d19189932c'
-          };
-          for (const k of Object.keys(APPROVER_NAME_MAP)) {
-            if (approverName.includes(k) || k.includes(approverName)) {
-              approverLineId = APPROVER_NAME_MAP[k];
-              break;
-            }
-          }
+        let approverLineId = '';
+        const b = String(updated.branchName || updated.branchId || '').toLowerCase();
+        const reqUser = String(updated.userName || '').trim();
+        const isReqEkarat = updated.userId === 'usr-import-85625' || reqUser.includes('เอกราช');
+        if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') {
+          approverLineId = isReqEkarat ? 'U81778d734346f14e047e07cb37d1ccd1' : 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
+        } else if (b.includes('กล') || b === 'me') {
+          approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
+        } else if (b.includes('บัญชี') || b === 'ac') {
+          approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af';
+        } else if (b.includes('ไฟฟ้า') || b === 'el') {
+          approverLineId = 'U013dfdf06ab0c66db7d898540077d80e';
+        } else if (b.includes('ยนต์') || b === 'at') {
+          approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246';
+        } else if (b.includes('สามัญ') || b === 'gen') {
+          approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c';
         }
-        if (!approverLineId || !approverLineId.startsWith('U')) {
-          const b = String(updated.branchName || updated.branchId || '').toLowerCase();
-          if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
-          else if (b.includes('กล') || b === 'me') approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
-          else if (b.includes('บัญชี') || b === 'ac') approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af';
-          else if (b.includes('ไฟฟ้า') || b === 'el') approverLineId = 'U013dfdf06ab0c66db7d898540077d80e';
-          else if (b.includes('ยนต์') || b === 'at') approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246';
-          else if (b.includes('สามัญ') || b === 'gen') approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c';
-          else approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
+
+        if (!approverLineId && updated.assignedApproverLineId && updated.assignedApproverLineId !== 'U606b5325d901952b8d055d1ce9f9c921') {
+          approverLineId = updated.assignedApproverLineId;
+        }
+
+        if (!approverLineId) {
+          approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
         }
 
         if (token && approverLineId && approverLineId.startsWith('U')) {

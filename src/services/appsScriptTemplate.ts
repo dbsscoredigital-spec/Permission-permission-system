@@ -102,13 +102,14 @@ function doPost(e) {
       var pushTo = String(pushPayload.to || "").trim();
       var pushMsgs = pushPayload.messages || [];
 
-      // ป้องกันการส่ง Flex ซ้ำซ้อน (ตรวจจับจาก reqId หรือ altText)
+      // ป้องกันการส่ง Flex ซ้ำซ้อน (ตรวจจับจาก reqId หรือ altText เว้นแต่ force === true เช่น เมื่อครูสอนแทนกดรับทราบ)
       var pReqId = String(pushPayload.reqId || "").trim();
+      var isForced = pushPayload.force === true || pReqId.indexOf("_ack_") !== -1;
       if (!pReqId && pushMsgs.length > 0) {
         var mMatch = String(pushMsgs[0].altText || "").match(/REQ-\d+-\d+/i);
         if (mMatch) pReqId = mMatch[0];
       }
-      if (pReqId) {
+      if (pReqId && !isForced) {
         var scriptCache = CacheService.getScriptCache();
         var cachePushKey = "lock_push_post_" + pReqId + "_" + pushTo;
         if (scriptCache && scriptCache.get(cachePushKey)) {

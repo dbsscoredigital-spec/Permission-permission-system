@@ -686,6 +686,40 @@ export default function App() {
   // 1-Click Direct Substitute Teaching Ack Modal (Opened via LINE link ?action=substitute_ack&reqId=...)
   const renderSubstituteAckModal = () => {
     if (!substituteAckModalReq) return null;
+
+    const formatReadableDate = (raw?: string) => {
+      if (!raw) return '-';
+      const s = String(raw).trim();
+      if (s.includes('T')) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+          const local = new Date(d.getTime() + 7 * 3600 * 1000);
+          const y = local.getUTCFullYear() < 2500 ? local.getUTCFullYear() + 543 : local.getUTCFullYear();
+          const mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+          return `${local.getUTCDate()} ${mNames[local.getUTCMonth()]} ${y}`;
+        }
+      }
+      return s;
+    };
+
+    const formatReadableTime = (raw?: string) => {
+      if (!raw) return '-';
+      const s = String(raw).trim();
+      if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+      if (s.includes('T')) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+          const h = String((d.getUTCHours() + 7) % 24).padStart(2, '0');
+          const m = String(d.getUTCMinutes()).padStart(2, '0');
+          return `${h}:${m}`;
+        }
+      }
+      return s.slice(0, 5);
+    };
+
+    const displayDate = formatReadableDate(substituteAckModalReq.exitDate);
+    const displayTime = `${formatReadableTime(substituteAckModalReq.exitTime)} – ${formatReadableTime(substituteAckModalReq.returnTime)}`;
+
     return (
       <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
         <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 relative animate-in zoom-in-95 my-6">
@@ -722,7 +756,7 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <span className="text-slate-500">วัน-เวลาที่ขอสอนแทน:</span>
-              <span className="font-bold text-slate-800">{substituteAckModalReq.exitDate} เวลา {substituteAckModalReq.exitTime} – {substituteAckModalReq.returnTime} น.</span>
+              <span className="font-bold text-slate-800">{displayDate} เวลา {displayTime} น.</span>
             </div>
 
             <div className="p-3 bg-amber-100/70 rounded-xl border border-amber-200/90 text-amber-950 space-y-1">

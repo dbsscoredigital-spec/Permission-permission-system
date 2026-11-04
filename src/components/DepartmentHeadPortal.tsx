@@ -61,11 +61,59 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   onAcknowledgeSubstitute,
   onDeleteRequest
 }) => {
-  // History filter state (Strictly scoped to Department Head's own branch only)
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
   const [syncingLine, setSyncingLine] = useState<boolean>(false);
   const [requestToDelete, setRequestToDelete] = useState<ExitRequest | null>(null);
+
+  const formatDisplayDate = (d?: string) => {
+    if (!d) return '-';
+    const s = String(d).trim();
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const local = new Date(dt.getTime() + 7 * 3600 * 1000);
+        const y = local.getUTCFullYear() < 2500 ? local.getUTCFullYear() + 543 : local.getUTCFullYear();
+        const mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        return `${local.getUTCDate()} ${mNames[local.getUTCMonth()]} ${y}`;
+      }
+    }
+    return s;
+  };
+
+  const formatDisplayTime = (t?: string) => {
+    if (!t) return '-';
+    const s = String(t).trim();
+    if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const h = String((dt.getUTCHours() + 7) % 24).padStart(2, '0');
+        const m = String(dt.getUTCMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }
+    }
+    return s.slice(0, 5);
+  };
+
+  const formatDisplayTimestamp = (ts?: string) => {
+    if (!ts) return 'เรียบร้อย';
+    const s = String(ts).trim();
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const local = new Date(dt.getTime() + 7 * 3600 * 1000);
+        const rawY = local.getUTCFullYear();
+        const y = rawY < 2500 ? rawY + 543 : rawY;
+        const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(local.getUTCDate()).padStart(2, '0');
+        const h = String(local.getUTCHours()).padStart(2, '0');
+        const min = String(local.getUTCMinutes()).padStart(2, '0');
+        return `${day}/${m}/${y} ${h}:${min} น.`;
+      }
+    }
+    return s;
+  };
 
   const handleConfirmDelete = () => {
     if (!requestToDelete) return;
@@ -451,7 +499,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                           <div className="space-y-2 text-xs text-slate-700 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100">
                             <div className="flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>วันที่ออก: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
+                              <span>วันที่ออก: <strong>{formatDisplayDate(req.exitDate)}</strong> เวลา: <strong>{formatDisplayTime(req.exitTime)} – {formatDisplayTime(req.returnTime)} น.</strong></span>
                             </div>
                             <div className="flex items-start gap-2">
                               <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -462,7 +510,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                               <span className="text-slate-900 font-medium">{req.reason}</span>
                             </div>
                             <div className="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/80">
-                              อนุมัติเมื่อ: <strong>{req.approvedAt || 'เรียบร้อย'}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
+                              อนุมัติเมื่อ: <strong>{formatDisplayTimestamp(req.approvedAt)}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
                             </div>
                           </div>
                         </div>
@@ -532,7 +580,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                     <div className="space-y-2.5 text-xs text-slate-700 bg-amber-50/40 p-3.5 rounded-xl border border-amber-100">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>วันที่ออก: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
+                        <span>วันที่ออก: <strong>{formatDisplayDate(req.exitDate)}</strong> เวลา: <strong>{formatDisplayTime(req.exitTime)} – {formatDisplayTime(req.returnTime)} น.</strong></span>
                       </div>
                       <div className="flex items-start gap-2">
                         <MapPin className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -691,7 +739,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                         <div className="space-y-2 text-xs text-slate-700 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>วันที่ออก: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
+                            <span>วันที่ออก: <strong>{formatDisplayDate(req.exitDate)}</strong> เวลา: <strong>{formatDisplayTime(req.exitTime)} – {formatDisplayTime(req.returnTime)} น.</strong></span>
                           </div>
                           <div className="flex items-start gap-2">
                             <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -702,7 +750,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                             <span className="text-slate-900 font-medium">{req.reason}</span>
                           </div>
                           <div className="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/80">
-                            อนุมัติเมื่อ: <strong>{req.approvedAt || 'เรียบร้อย'}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
+                            อนุมัติเมื่อ: <strong>{formatDisplayTimestamp(req.approvedAt)}</strong> โดย: <strong>{req.approvedBy || 'หัวหน้าสาขา'}</strong>
                           </div>
                         </div>
                       </div>
@@ -848,7 +896,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                       <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-1 text-[11px]">
                         <div className="flex items-center gap-1.5 text-slate-700">
                           <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span>วันที่: <strong>{req.exitDate}</strong> ({req.exitTime}-{req.returnTime} น.)</span>
+                          <span>วันที่: <strong>{formatDisplayDate(req.exitDate)}</strong> ({formatDisplayTime(req.exitTime)}-{formatDisplayTime(req.returnTime)} น.)</span>
                         </div>
                         <div className="flex items-start gap-1.5 text-slate-700">
                           <MapPin className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
@@ -922,8 +970,8 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                             <span className="text-[10px] text-slate-400 ml-1">({req.position})</span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-800 block">{req.exitDate}</span>
-                            <span className="text-slate-500">{req.exitTime} - {req.returnTime} น.</span>
+                            <span className="font-semibold text-slate-800 block">{formatDisplayDate(req.exitDate)}</span>
+                            <span className="text-slate-500">{formatDisplayTime(req.exitTime)} - {formatDisplayTime(req.returnTime)} น.</span>
                           </td>
                           <td className="px-4 py-3 max-w-xs">
                             <span className="font-medium text-slate-800 block truncate">{req.destination}</span>
@@ -1092,14 +1140,14 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                     </div>
 
                     <div className="text-xs text-slate-600 space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-100 mb-3">
-                      <div><strong>วันที่ออก:</strong> {req.exitDate} เวลา {req.exitTime} – {req.returnTime} น.</div>
+                      <div><strong>วันที่ออก:</strong> {formatDisplayDate(req.exitDate)} เวลา {formatDisplayTime(req.exitTime)} – {formatDisplayTime(req.returnTime)} น.</div>
                       <div><strong>เหตุผล:</strong> {req.reason}</div>
                       <div><strong>ผู้อนุมัติ:</strong> {req.assignedApproverName}</div>
                       {req.travelMethod && (
                         <div><strong>การเดินทาง:</strong> {req.travelMethod} {req.vehiclePlate && `(${req.vehiclePlate})`}</div>
                       )}
                       {req.approvedAt && (
-                        <div className="text-emerald-700"><strong>อนุมัติเมื่อ:</strong> {req.approvedAt} ({req.approvedBy})</div>
+                        <div className="text-emerald-700"><strong>อนุมัติเมื่อ:</strong> {formatDisplayTimestamp(req.approvedAt)} ({req.approvedBy})</div>
                       )}
                       {req.rejectionReason && (
                         <div className="text-rose-700"><strong>เหตุผลที่ไม่อนุมัติ:</strong> {req.rejectionReason}</div>
@@ -1570,7 +1618,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">วัน-เวลา:</span>
-                <span className="font-medium text-slate-800">{requestToDelete.exitDate} ({requestToDelete.exitTime} – {requestToDelete.returnTime} น.)</span>
+                <span className="font-medium text-slate-800">{formatDisplayDate(requestToDelete.exitDate)} ({formatDisplayTime(requestToDelete.exitTime)} – {formatDisplayTime(requestToDelete.returnTime)} น.)</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">สถานที่:</span>

@@ -146,30 +146,29 @@ export class LineService {
         // Expected when running on static hosts like GitHub Pages where /api/line/push doesn't exist
       }
 
-      // 2. Dispatch through Google Apps Script Web App (Works 100% on GitHub Pages static sites)
+      // 2. Dispatch through Google Apps Script Web App (Works 100% on GitHub Pages static sites & iOS Safari)
       const gasUrl = settings.googleAppsScriptUrl || INITIAL_SETTINGS.googleAppsScriptUrl;
       if (gasUrl && gasUrl.startsWith('http')) {
         try {
-          const msgsJson = JSON.stringify(messages);
-          // A) Dispatch via GET (Bypasses all CORS preflight limitations on static hosting)
-          const getUrl = `${gasUrl}?action=push_line&to=${encodeURIComponent(targetTo)}&token=${encodeURIComponent(token)}&messages=${encodeURIComponent(msgsJson)}${reqId ? `&reqId=${encodeURIComponent(reqId)}` : ''}`;
-          fetch(getUrl, { mode: 'no-cors' }).catch(() => {});
+          const postBody = JSON.stringify({
+            action: 'push_line',
+            payload: {
+              token,
+              to: targetTo,
+              messages,
+              reqId,
+              force: true
+            }
+          });
 
-          // B) Also dispatch via POST for redundancy
-          fetch(gasUrl, {
+          // In mode: 'no-cors', WebKit (iOS Safari / LINE browser) strictly permits ONLY CORS-safelisted headers.
+          // Using text/plain;charset=utf-8 is CORS-safelisted and GAS JSON.parse(e.postData.contents) handles it directly!
+          await fetch(gasUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             mode: 'no-cors',
-            body: JSON.stringify({
-              action: 'push_line',
-              payload: {
-                token,
-                to: targetTo,
-                messages,
-                reqId
-              }
-            })
-          }).catch(() => {});
+            body: postBody
+          });
 
           return {
             success: true,
@@ -317,7 +316,9 @@ export class LineService {
    */
   public async sendApproverNotification(req: ExitRequest, force: boolean = false): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
     // กฎเหล็ก: คำขอ 1 รายการ ส่ง Flex ให้หัวหน้าเพียง 1 ครั้งเท่านั้น ป้องกันการส่งเบิ้ล 100% (เว้นแต่ force = true เมื่อครูสอนแทนกดรับทราบ)
-    if (!force && this.sentApproverCache.has(req.id)) {
+    if (force) {
+      this.sentApproverCache.delete(req.id);
+    } else if (this.sentApproverCache.has(req.id)) {
       return { success: true, message: 'ส่งการแจ้งเตือนไปยังหัวหน้าเรียบร้อยแล้ว (ไม่ส่งซ้ำ)' };
     }
     this.sentApproverCache.add(req.id);
@@ -343,63 +344,69 @@ export class LineService {
 
     this.saveMessages([newMsg, ...msgs]);
 
-    // Find approver's LINE ID
-    const storage = StorageService.getInstance();
-    let approverLineId = req.assignedApproverLineId;
-    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
-      const users = storage.getUsers();
-      const approverUser = users.find(u => 
-        (req.assignedApproverId && u.id === req.assignedApproverId) ||
-        (req.assignedApproverName && u.name === req.assignedApproverName) ||
-        (u.branchId === req.branchId && u.role === 'approver')
-      );
-      if (approverUser?.lineId && approverUser.lineId.trim().startsWith('U') && !approverUser.lineId.startsWith('U_')) {
-        approverLineId = approverUser.lineId.trim();
+    // Find approver's LINE ID:
+    // Rule: Branch Head (หัวหน้าสาขา) is authoritative.
+    // สาขาวิชาธุรกิจดิจิทัล -> หัวหน้าสาขาคือนายเอกราช อาจณรงค์ (Uedc4422b785b7a8d1f6c85ae2eb950cf)
+    // (เว้นแต่กรณีที่นายเอกราชเป็นผู้ยื่นคำขอเอง จะส่งให้รองผู้อำนวยการ / Admin นายศรายุทธ สมสุข พิจารณา)
+    const b = (req.branchId || req.branchName || '').toLowerCase();
+    const reqUserName = (req.userName || '').trim();
+    const isReqEkarat = req.userId === 'usr-import-85625' || reqUserName.includes('เอกราช');
+    let approverLineId = '';
+
+    if (b === 'db' || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
+      if (isReqEkarat) {
+        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // นายศรายุทธ สมสุข (รอง ผอ. / Admin)
+        req.assignedApproverName = 'นายศรายุทธ สมสุข (รองผู้อำนวยการฝ่ายวิชาการ / ผู้ดูแลระบบ)';
+      } else {
+        approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
+        req.assignedApproverName = 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)';
       }
+    } else if (b === 'me' || b.includes('กล')) {
+      approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2'; // นายคัมภีร์ ช่วยเพชร
+    } else if (b === 'ac' || b.includes('บัญชี')) {
+      approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af'; // นางสาวอรอนงค์ ขุนทองแก้ว
+    } else if (b === 'el' || b.includes('ไฟฟ้า')) {
+      approverLineId = 'U013dfdf06ab0c66db7d898540077d80e'; // นางนฤมล เรืองพุฒ
+    } else if (b === 'at' || b.includes('ยนต์')) {
+      approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246'; // นายฉัตรชัย ดิษฐาน
+    } else if (b === 'gen' || b.includes('สามัญ')) {
+      approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c'; // นางกนกวรรณ ธนาพล
     }
 
-    // Name-based mapping for guaranteed approver LINE IDs
-    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
+    // Name-based override if assignedApproverName specifies an approver
+    if (!approverLineId) {
       const aName = (req.assignedApproverName || '').trim();
       const APPROVER_NAME_MAP: Record<string, string> = {
-        'นายศรายุทธ สมสุข': 'U81778d734346f14e047e07cb37d1ccd1',
-        'นายคัมภีร์ ช่วยเพชร': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
-        'นางสาวอรอนงค์ ขุนทองแก้ว': 'U84c5267a9feee6f8968d324a3c79c4af',
-        'นางนฤมล เรืองพุฒ': 'U013dfdf06ab0c66db7d898540077d80e',
-        'นายฉัตรชัย ดิษฐาน': 'U00d0bcb58a525b4a9e29999ddd8c8246',
-        'นางกนกวรรณ ธนาพล': 'U0b1a90a74dacb8fbb2be07d19189932c'
+        'เอกราช': 'Uedc4422b785b7a8d1f6c85ae2eb950cf',
+        'ศรายุทธ': 'U81778d734346f14e047e07cb37d1ccd1',
+        'คัมภีร์': 'U759b2ec7a4eee7f1c4565b9a7a8194e2',
+        'อรอนงค์': 'U84c5267a9feee6f8968d324a3c79c4af',
+        'นฤมล': 'U013dfdf06ab0c66db7d898540077d80e',
+        'ฉัตรชัย': 'U00d0bcb58a525b4a9e29999ddd8c8246',
+        'กนกวรรณ': 'U0b1a90a74dacb8fbb2be07d19189932c'
       };
       for (const k of Object.keys(APPROVER_NAME_MAP)) {
-        if (aName.includes(k) || k.includes(aName)) {
+        if (aName.includes(k)) {
           approverLineId = APPROVER_NAME_MAP[k];
           break;
         }
       }
     }
 
-    // Branch-based guarantee for approver
-    if (!approverLineId || !approverLineId.trim().startsWith('U') || approverLineId.startsWith('U_')) {
-      const b = (req.branchId || req.branchName || '').toLowerCase();
-      if (b === 'db' || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
-        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // นายศรายุทธ สมสุข
-      } else if (b === 'me' || b.includes('กล')) {
-        approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2'; // นายคัมภีร์ ช่วยเพชร
-      } else if (b === 'ac' || b.includes('บัญชี')) {
-        approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af'; // นางสาวอรอนงค์ ขุนทองแก้ว
-      } else if (b === 'el' || b.includes('ไฟฟ้า')) {
-        approverLineId = 'U013dfdf06ab0c66db7d898540077d80e'; // นางนฤมล เรืองพุฒ
-      } else if (b === 'at' || b.includes('ยนต์')) {
-        approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246'; // นายฉัตรชัย ดิษฐาน
-      } else if (b === 'gen' || b.includes('สามัญ')) {
-        approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c'; // นางกนกวรรณ ธนาพล
-      } else {
-        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // Fallback to นายศรายุทธ สมสุข
-      }
+    // Check req.assignedApproverLineId if valid and not the substitute teacher (U606b5325d901952b8d055d1ce9f9c921)
+    if (!approverLineId && req.assignedApproverLineId && req.assignedApproverLineId.startsWith('U') && !req.assignedApproverLineId.startsWith('U_') && req.assignedApproverLineId !== 'U606b5325d901952b8d055d1ce9f9c921') {
+      approverLineId = req.assignedApproverLineId;
+    }
+
+    // Default fallback to นายศรายุทธ สมสุข
+    if (!approverLineId) {
+      approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
     }
 
     // Build and push real LINE Flex Message to approver immediately
     const flexPayload = this.generateLineFlexMessagePayload(req);
-    return await this.pushToLineBackend(approverLineId, [flexPayload], undefined, req.id);
+    const pushReqId = force ? `${req.id}_ack_${Date.now()}` : req.id;
+    return await this.pushToLineBackend(approverLineId, [flexPayload], undefined, pushReqId);
   }
 
   /**
@@ -538,6 +545,36 @@ export class LineService {
     return { success: true, message: 'บันทึกสถานะเรียบร้อยแล้ว' };
   }
 
+  private formatFlexThaiDate(raw?: string): string {
+    if (!raw) return '-';
+    const s = String(raw).trim();
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const local = new Date(dt.getTime() + 7 * 3600 * 1000);
+        const y = local.getUTCFullYear() < 2500 ? local.getUTCFullYear() + 543 : local.getUTCFullYear();
+        const mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        return `${local.getUTCDate()} ${mNames[local.getUTCMonth()]} ${y}`;
+      }
+    }
+    return s;
+  }
+
+  private formatFlexThaiTime(raw?: string): string {
+    if (!raw) return '-';
+    const s = String(raw).trim();
+    if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const h = String((dt.getUTCHours() + 7) % 24).padStart(2, '0');
+        const m = String(dt.getUTCMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }
+    }
+    return s.slice(0, 5);
+  }
+
   /**
    * Build LINE Flex Message JSON payload for Teacher approval/rejection status
    */
@@ -549,6 +586,8 @@ export class LineService {
   ) {
     const isApproved = status === 'approved';
     const primaryColor = isApproved ? '#059669' : '#dc2626';
+    const cleanDate = this.formatFlexThaiDate(req.exitDate);
+    const cleanTime = `${this.formatFlexThaiTime(req.exitTime)} – ${this.formatFlexThaiTime(req.returnTime)} น.`;
 
     return {
       type: 'flex',
@@ -598,7 +637,7 @@ export class LineService {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '📅 วันที่:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: req.exitDate, size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: cleanDate, size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {
@@ -606,7 +645,7 @@ export class LineService {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '🕐 เวลา:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: `${req.exitTime} – ${req.returnTime} น.`, size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: cleanTime, size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {
@@ -729,6 +768,8 @@ export class LineService {
     const primaryApproveUrl = gasUrl ? `${gasUrl}?action=approve&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=approve&reqId=${encodeURIComponent(req.id)}`;
     const primaryRejectUrl = gasUrl ? `${gasUrl}?action=reject&reqId=${encodeURIComponent(req.id)}` : `${baseUrl}/api/line/quick-approve?action=reject&reqId=${encodeURIComponent(req.id)}`;
     const inAppViewUrl = `${baseUrl}?action=direct_approve&reqId=${encodeURIComponent(req.id)}`;
+    const cleanDate = this.formatFlexThaiDate(req.exitDate);
+    const cleanTime = `${this.formatFlexThaiTime(req.exitTime)} – ${this.formatFlexThaiTime(req.returnTime)} น.`;
 
     return {
       type: 'flex',
@@ -784,7 +825,7 @@ export class LineService {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '📅 วันที่:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: req.exitDate, size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: cleanDate, size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {
@@ -792,7 +833,7 @@ export class LineService {
               layout: 'horizontal',
               contents: [
                 { type: 'text', text: '🕐 เวลา:', size: 'sm', color: '#64748b', flex: 2 },
-                { type: 'text', text: `${req.exitTime} – ${req.returnTime} น.`, size: 'sm', color: '#0f172a', flex: 5 }
+                { type: 'text', text: cleanTime, size: 'sm', color: '#0f172a', flex: 5 }
               ]
             },
             {

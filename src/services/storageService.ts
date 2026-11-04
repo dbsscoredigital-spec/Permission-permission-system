@@ -13,6 +13,59 @@ const KEYS = {
   DELETED_REQUEST_IDS: 'exit_app_deleted_request_ids_v4'
 };
 
+// Helper functions to clean raw Google Sheets date and time values
+function normalizeSheetTime(val: any): string {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      // Sheet stores times as 1899-12-30THH:mm:ss.000Z in UTC. Bangkok is UTC+7.
+      const h = String((d.getUTCHours() + 7) % 24).padStart(2, '0');
+      const m = String(d.getUTCMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+  }
+  return s.slice(0, 5);
+}
+
+function normalizeSheetDate(val: any): string {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const local = new Date(d.getTime() + 7 * 3600 * 1000);
+      const y = local.getUTCFullYear();
+      const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(local.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+  }
+  return s.slice(0, 10);
+}
+
+function normalizeSheetTimestamp(val: any): string {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const local = new Date(d.getTime() + 7 * 3600 * 1000);
+      const rawY = local.getUTCFullYear();
+      const y = rawY < 2500 ? rawY + 543 : rawY;
+      const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(local.getUTCDate()).padStart(2, '0');
+      const h = String(local.getUTCHours()).padStart(2, '0');
+      const min = String(local.getUTCMinutes()).padStart(2, '0');
+      return `${y}-${m}-${day} ${h}:${min}`;
+    }
+  }
+  return s;
+}
+
 export class StorageService {
   private static instance: StorageService;
 
@@ -221,7 +274,7 @@ export class StorageService {
       // 1. Delete previous sync packet
       fetch(gasUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         mode: 'no-cors',
         body: JSON.stringify({
           action: 'delete_request',
@@ -232,7 +285,7 @@ export class StorageService {
       // 2. Append updated sync packet (Works with BOTH old and new Google Apps Script deployments!)
       fetch(gasUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         mode: 'no-cors',
         body: JSON.stringify({
           action: 'create_request',
@@ -282,7 +335,7 @@ export class StorageService {
       try {
         fetch(gasUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           mode: 'no-cors',
           body: JSON.stringify({
             action: 'save_users',
@@ -455,6 +508,25 @@ export class StorageService {
     const branch = branches.find(b => b.id === branchId || b.name === branchId);
     const users = this.getUsers();
 
+    // Specific branch guarantee for ธุรกิจดิจิทัล (Head of branch is นายเอกราช อาจณรงค์)
+    const bLower = (branchId || '').toLowerCase();
+    if (bLower === 'db' || bLower.includes('ธุรกิจ') || bLower.includes('ดิจิทัล')) {
+      const isReqEkarat = requesterUserId === 'usr-import-85625' || (typeof requesterUserId === 'string' && requesterUserId.includes('เอกราช'));
+      if (isReqEkarat) {
+        return {
+          approverId: 'usr-admin',
+          approverName: 'นายศรายุทธ สมสุข (รองผู้อำนวยการฝ่ายวิชาการ / ผู้ดูแลระบบ)',
+          lineId: 'U81778d734346f14e047e07cb37d1ccd1'
+        };
+      }
+      const u = users.find(user => user.id === 'usr-import-85625' || user.lineId === 'Uedc4422b785b7a8d1f6c85ae2eb950cf');
+      return {
+        approverId: 'usr-import-85625',
+        approverName: u ? `${u.name} (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)` : 'นายเอกราช       อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
+        lineId: u?.lineId || 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
+      };
+    }
+
     // 1. Look for active department head in this branch who is NOT the requester
     if (branch && branch.approverUserId && requesterUserId !== branch.approverUserId) {
       const u = users.find(user => user.id === branch.approverUserId);
@@ -530,9 +602,11 @@ export class StorageService {
         branchId: r.branchId || 'ME',
         position: r.position || 'ครูผู้สอน',
         assignedApproverName: r.assignedApproverName || 'หัวหน้าสาขา',
-        exitDate: r.exitDate || new Date().toISOString().slice(0, 10),
-        exitTime: r.exitTime || '10:30',
-        returnTime: r.returnTime || '12:00',
+        exitDate: normalizeSheetDate(r.exitDate) || new Date().toISOString().slice(0, 10),
+        exitTime: normalizeSheetTime(r.exitTime) || '10:30',
+        returnTime: normalizeSheetTime(r.returnTime) || '12:00',
+        approvedAt: normalizeSheetTimestamp(r.approvedAt),
+        submittedAt: normalizeSheetTimestamp(r.submittedAt),
         status: r.status || 'pending',
         travelMethod: r.travelMethod || 'ตามภารกิจราชการ',
         qrToken: r.qrToken || `SECURE-EXIT-${r.id || Date.now()}`
@@ -720,23 +794,25 @@ export class StorageService {
     const thaiTimestamp = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     let updated: ExitRequest;
+    const branchApprover = this.getApproverForBranch(fallbackReq?.branchId || fallbackReq?.branchName || 'DB', fallbackReq?.userId);
+
     if (index === -1) {
       updated = {
         id: requestId,
         userId: fallbackReq?.userId || 'temp',
         userName: fallbackReq?.userName || 'ครูผู้ขอออกนอก',
         position: fallbackReq?.position || 'ครูผู้สอน',
-        branchId: fallbackReq?.branchId || '',
-        branchName: fallbackReq?.branchName || 'วิทยาลัยเทคโนโลยีดอนบอสโกสุราษฎร์',
+        branchId: fallbackReq?.branchId || 'DB',
+        branchName: fallbackReq?.branchName || 'ธุรกิจดิจิทัล',
         exitDate: fallbackReq?.exitDate || new Date().toISOString().slice(0, 10),
         exitTime: fallbackReq?.exitTime || '10:00',
         returnTime: fallbackReq?.returnTime || '12:00',
         destination: fallbackReq?.destination || 'ไปราชการ / ติดต่อภารกิจ',
         reason: fallbackReq?.reason || 'ขอความอนุเคราะห์สอนแทน',
         travelMethod: fallbackReq?.travelMethod || 'ยานพาหนะส่วนตัว',
-        assignedApproverId: fallbackReq?.assignedApproverId || 'usr-appr-1',
-        assignedApproverName: fallbackReq?.assignedApproverName || 'หัวหน้าสาขาวิชา',
-        assignedApproverLineId: fallbackReq?.assignedApproverLineId || '',
+        assignedApproverId: fallbackReq?.assignedApproverId || branchApprover.approverId,
+        assignedApproverName: fallbackReq?.assignedApproverName || branchApprover.approverName,
+        assignedApproverLineId: fallbackReq?.assignedApproverLineId || branchApprover.lineId,
         status: (fallbackReq?.status as any) || 'pending',
         hasClasses: true,
         substituteStatus: 'acknowledged',
@@ -755,6 +831,11 @@ export class StorageService {
         substituteStatus: 'acknowledged',
         substituteAcknowledgedAt: thaiTimestamp
       };
+      if (!updated.assignedApproverLineId || !updated.assignedApproverLineId.startsWith('U') || updated.assignedApproverLineId.startsWith('U_') || updated.assignedApproverLineId === 'U606b5325d901952b8d055d1ce9f9c921' || (updated.branchId && (updated.branchId === 'DB' || updated.branchName?.includes('ธุรกิจ')))) {
+        updated.assignedApproverId = branchApprover.approverId;
+        updated.assignedApproverName = branchApprover.approverName;
+        updated.assignedApproverLineId = branchApprover.lineId;
+      }
       requests[index] = updated;
     }
 
@@ -1059,7 +1140,7 @@ export class StorageService {
       try {
         fetch(gasUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           mode: 'no-cors',
           body: JSON.stringify({
             action: 'save_settings',
@@ -1085,10 +1166,10 @@ export class StorageService {
       return;
     }
     try {
-      // ส่งเพียง 1 ครั้งผ่าน POST (no-cors) ไปยัง Google Apps Script เพื่อป้องกันข้อความซ้ำซ้อน
+      // ส่งเพียง 1 ครั้งผ่าน POST (no-cors, text/plain) ไปยัง Google Apps Script เพื่อป้องกันข้อความซ้ำซ้อนและรองรับ iOS WebKit
       fetch(settings.googleAppsScriptUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         mode: 'no-cors',
         body: JSON.stringify({ action, payload, timestamp: new Date().toISOString() })
       }).catch(() => {});
@@ -1142,16 +1223,64 @@ export class StorageService {
               const gasData = await gasRes.json();
               if (gasData && Array.isArray(gasData.requests)) {
                 const { users: sysUsers, settings: sysSettings } = this.parseSysPacketFromRequests(gasData.requests);
-                const gasRequests: ExitRequest[] = gasData.requests.filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'));
+                const gasRequests: ExitRequest[] = gasData.requests
+                  .filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'))
+                  .map((r: any) => ({
+                    ...r,
+                    exitDate: normalizeSheetDate(r.exitDate) || r.exitDate,
+                    exitTime: normalizeSheetTime(r.exitTime) || r.exitTime,
+                    returnTime: normalizeSheetTime(r.returnTime) || r.returnTime,
+                    approvedAt: normalizeSheetTimestamp(r.approvedAt) || r.approvedAt,
+                    submittedAt: normalizeSheetTimestamp(r.submittedAt) || r.submittedAt
+                  }));
                 this.saveRequests(gasRequests);
+
+                const sanitizeIncomingUsers = (rawList: User[]) => {
+                  return rawList.map(u => {
+                    const uName = (u.name || '').replace(/\s+/g, ' ').trim();
+                    if (uName.includes('เอกราช') || u.id === 'usr-import-85625') {
+                      return {
+                        ...u,
+                        lineId: 'Uedc4422b785b7a8d1f6c85ae2eb950cf',
+                        role: 'approver',
+                        position: 'หัวหน้าสาขาวิชาธุรกิจดิจิทัล',
+                        branchId: 'DB',
+                        branchName: 'ธุรกิจดิจิทัล'
+                      };
+                    }
+                    if (uName.includes('ศรายุทธ') || u.id === 'usr-import-85622' || u.id === 'usr-admin') {
+                      return {
+                        ...u,
+                        lineId: 'U81778d734346f14e047e07cb37d1ccd1',
+                        role: u.role === 'admin' ? 'admin' : 'teacher',
+                        position: u.role === 'admin' ? 'ผู้ดูแลระบบ / รองผู้อำนวยการ' : 'ครูผู้สอน',
+                        branchId: 'DB',
+                        branchName: 'ธุรกิจดิจิทัล'
+                      };
+                    }
+                    if (uName.includes('วิลาวัณย์') || u.id === 'usr-import-85623') {
+                      return {
+                        ...u,
+                        lineId: 'U606b5325d901952b8d055d1ce9f9c921',
+                        role: 'teacher',
+                        position: 'ครูผู้สอน',
+                        branchId: 'DB',
+                        branchName: 'ธุรกิจดิจิทัล'
+                      };
+                    }
+                    return u;
+                  });
+                };
 
                 let updatedUsers = this.getUsers();
                 if (Array.isArray(gasData.users) && gasData.users.length > 0) {
-                  localStorage.setItem(KEYS.USERS, JSON.stringify(gasData.users));
-                  updatedUsers = gasData.users;
+                  const sanitized = sanitizeIncomingUsers(gasData.users);
+                  localStorage.setItem(KEYS.USERS, JSON.stringify(sanitized));
+                  updatedUsers = sanitized;
                 } else if (sysUsers && sysUsers.length > 0) {
-                  localStorage.setItem(KEYS.USERS, JSON.stringify(sysUsers));
-                  updatedUsers = sysUsers;
+                  const sanitized = sanitizeIncomingUsers(sysUsers);
+                  localStorage.setItem(KEYS.USERS, JSON.stringify(sanitized));
+                  updatedUsers = sanitized;
                 }
 
                 let currentSettings = this.getSettings();

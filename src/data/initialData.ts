@@ -344,8 +344,8 @@ export const INITIAL_BRANCHES: Branch[] = [
   {
     "id": "DB",
     "name": "ธุรกิจดิจิทัล",
-    "approverUserId": "usr-import-85622",
-    "approverName": "นายศรายุทธ       สมสุข (ครูผู้สอน)",
+    "approverUserId": "usr-import-85625",
+    "approverName": "นายเอกราช       อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
     "color": "#0284c7"
   },
   {

@@ -1,6 +1,61 @@
 {
   "requests": [
     {
+      "id": "REQ-20261105-113",
+      "userId": "usr-admin",
+      "userName": "นายศรายุทธ สมสุข",
+      "branchId": "DB",
+      "branchName": "ธุรกิจดิจิทัล",
+      "position": "ผู้ดูแลระบบ / รองผู้อำนวยการ",
+      "userPhone": "",
+      "userLineId": "U81778d734346f14e047e07cb37d1ccd1",
+      "teacherLineId": "U81778d734346f14e047e07cb37d1ccd1",
+      "userUsername": "admin",
+      "submittedAt": "2569-11-05 16:16",
+      "exitDate": "2026-11-05",
+      "exitTime": "10:47",
+      "returnTime": "12:17",
+      "destination": "bnhbkmj",
+      "reason": "hjkhjk",
+      "travelMethod": "ตามภารกิจราชการ",
+      "assignedApproverId": "usr-import-85625",
+      "assignedApproverName": "นายเอกราช    อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
+      "status": "pending",
+      "qrToken": "SECURE-EXIT-REQ-20261105-113-DB-7M1YUD",
+      "hasClasses": false,
+      "substituteTeacherName": "",
+      "substituteTeacherId": "",
+      "substituteSubject": "",
+      "substituteTasks": "",
+      "substituteStatus": "not_required",
+      "substituteAcknowledgedAt": "",
+      "approver": "นายเอกราช    อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
+      "notes": ""
+    },
+    {
+      "id": "REQ-TEST-SUB",
+      "userName": "นายทดสอบ",
+      "branchId": "DB",
+      "branchName": "ธุรกิจดิจิทัล",
+      "destination": "ไปราชการ",
+      "reason": "ประชุม",
+      "hasClasses": true,
+      "substituteTeacherName": "นางสาววิลาวัณย์ หนูแก้ว",
+      "substituteSubject": "การตลาด",
+      "status": "pending",
+      "substituteTeacherId": "usr-import-85623",
+      "substituteStatus": "acknowledged",
+      "substituteAcknowledgedAt": "2569-11-05 09:08",
+      "position": "ครูผู้สอน",
+      "assignedApproverName": "หัวหน้าสาขา",
+      "exitDate": "2026-11-05",
+      "exitTime": "10:30",
+      "returnTime": "12:00",
+      "travelMethod": "ตามภารกิจราชการ",
+      "qrToken": "SECURE-EXIT-REQ-TEST-SUB-TOKEN",
+      "submittedAt": ""
+    },
+    {
       "id": "REQ-20261104-680",
       "userId": "usr-admin",
       "userName": "นายศรายุทธ สมสุข",
@@ -65,7 +120,19 @@
       "notes": ""
     }
   ],
-  "logs": [],
+  "logs": [
+    {
+      "id": "LOG-SUB-1793869711022",
+      "requestId": "REQ-TEST-SUB",
+      "requestSummary": "นายทดสอบ ขอออกไป ไปราชการ",
+      "actorId": "usr-import-85623",
+      "actorName": "นางสาววิลาวัณย์ หนูแก้ว",
+      "actorRole": "ครูผู้สอนแทน",
+      "action": "substitute_ack",
+      "timestamp": "2569-11-05 09:08",
+      "comment": "ครูผู้สอนแทน (นางสาววิลาวัณย์ หนูแก้ว) กดรับทราบภาระงานสอนแทนเรียบร้อยแล้ว"
+    }
+  ],
   "users": [
     {
       "id": "usr-915068",
@@ -315,10 +382,10 @@
       "password": "7777",
       "name": "นายเอกราช    อาจณรงค์",
       "branchName": "ธุรกิจดิจิทัล",
-      "branchId": "DB",
-      "role": "approver",
+      "branchId": "ธุรกิจดิจิทัล",
+      "role": "teacher",
       "lineId": "Uedc4422b785b7a8d1f6c85ae2eb950cf",
-      "position": "หัวหน้าสาขาวิชาธุรกิจดิจิทัล"
+      "position": "ครูผู้สอน"
     },
     {
       "id": "usr-import-85626",

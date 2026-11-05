@@ -747,22 +747,26 @@ export class StorageService {
   }
 
   public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'>): ExitRequest {
-    const approver = this.getApproverForBranch(requestData.branchId, requestData.userId);
+    const users = this.getUsers();
+    const requester = users.find(u => u.id === requestData.userId || (requestData.userName && u.name === requestData.userName));
+    const effectiveBranch = requestData.branchId || requester?.branchId || (requestData as any).branchName || requester?.branchName || 'DB';
+    const effectiveBranchName = (requestData as any).branchName || requester?.branchName || effectiveBranch;
+    const approver = this.getApproverForBranch(effectiveBranch, requestData.userId);
+
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     const id = `REQ-${dateStr}-${randomSuffix}`;
-    const qrToken = `SECURE-EXIT-${id}-${requestData.branchId}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const qrToken = `SECURE-EXIT-${id}-${effectiveBranch}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     const now = new Date();
     const thaiSubmittedAt = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    const users = this.getUsers();
-    const requester = users.find(u => u.id === requestData.userId);
 
     const finalUserName = (requester?.name || requestData.userName || 'ครูผู้ขอ').replace(/\s+/g, ' ').trim();
 
     const newRequest: ExitRequest = {
       ...requestData,
+      branchId: effectiveBranch,
+      branchName: effectiveBranchName,
       id,
       userName: finalUserName,
       submittedAt: thaiSubmittedAt,

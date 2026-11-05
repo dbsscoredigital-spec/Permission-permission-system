@@ -450,6 +450,53 @@ ${subAckUrl}`;
         </div>
       </div>
 
+      {/* Prominent Pending Substitute Alert Banner (Visible across portal) */}
+      {pendingSubstituteForMe.length > 0 && (
+        <div className="bg-linear-to-r from-amber-500 via-amber-600 to-orange-600 text-white p-4 sm:p-5 rounded-2xl shadow-lg border border-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+              <Handshake className="w-6 h-6 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/20 text-[11px] font-bold">
+                <span>🔔 มีคำขอสอนแทนรอท่านรับทราบ ({pendingSubstituteForMe.length} รายการ)</span>
+              </div>
+              <h4 className="text-sm sm:text-base font-bold mt-1">
+                ครู{pendingSubstituteForMe[0].userName} ขอความอนุเคราะห์สอนแทน: {pendingSubstituteForMe[0].substituteSubject || 'ภาระงานสอนประจำวัน'}
+              </h4>
+              <p className="text-xs text-amber-100 mt-0.5">
+                💡 ครูผู้สอนแทนกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex แจ้งเตือนให้หัวหน้าสาขาพิจารณาอนุมัติทันที
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={acknowledgingId === pendingSubstituteForMe[0].id}
+              onClick={async () => {
+                setAcknowledgingId(pendingSubstituteForMe[0].id);
+                try {
+                  await onAcknowledgeSubstitute(pendingSubstituteForMe[0].id);
+                } finally {
+                  setAcknowledgingId(null);
+                }
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-emerald-50 text-emerald-800 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 disabled:opacity-50"
+            >
+              <CheckSquare className="w-4 h-4 text-emerald-600" />
+              <span>{acknowledgingId === pendingSubstituteForMe[0].id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบทันที'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('substitute-tasks')}
+              className="px-3 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <span>ดูรายการทั้งหมด ({pendingSubstituteForMe.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Subtab 1: Form View */}
       {activeSubTab === 'create' && (
         <div className="max-w-4xl mx-auto w-full space-y-4">
@@ -995,16 +1042,39 @@ ${subAckUrl}`;
                               </div>
                             )}
                             {req.substituteStatus === 'pending' && (
-                              <div className="pt-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openLineShare(req)}
-                                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#06c755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
-                                  title="ส่งข้อความแจ้งครูสอนแทนทาง LINE โดยตรง ไม่เสียโควต้าบอท"
-                                >
-                                  <MessageCircle className="w-3.5 h-3.5 fill-white" />
-                                  <span>📲 ส่งแชทแจ้งครูสอนแทนทาง LINE (ฟรี 0 ข้อความ)</span>
-                                </button>
+                              <div className="pt-2 space-y-1.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {(currentUser.id === req.substituteTeacherId || (currentUser.name && req.substituteTeacherName && (currentUser.name.includes(req.substituteTeacherName) || req.substituteTeacherName.includes(currentUser.name))) || currentUser.role === 'admin') && (
+                                    <button
+                                      type="button"
+                                      disabled={acknowledgingId === req.id}
+                                      onClick={async () => {
+                                        setAcknowledgingId(req.id);
+                                        try {
+                                          await onAcknowledgeSubstitute(req.id);
+                                        } finally {
+                                          setAcknowledgingId(null);
+                                        }
+                                      }}
+                                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                    >
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                      <span>{acknowledgingId === req.id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => openLineShare(req)}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#06c755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
+                                    title="ส่งข้อความแจ้งครูสอนแทนทาง LINE โดยตรง ไม่เสียโควต้าบอท"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                                    <span>📲 ส่งแชทแจ้งครูสอนแทน</span>
+                                  </button>
+                                </div>
+                                <p className="text-[10px] text-amber-700">
+                                  💡 ครูผู้สอนแทนกดรับทราบในระบบได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex ให้หัวหน้าสาขาพิจารณาอนุมัติทันที
+                                </p>
                               </div>
                             )}
                           </div>
@@ -1122,6 +1192,19 @@ ${subAckUrl}`;
                   <span>รอรับทราบ {pendingSubstituteForMe.length} รายการ</span>
                 </span>
               )}
+            </div>
+          </div>
+
+          {/* In-system instruction banner */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <span className="font-bold text-emerald-900 block">✨ ครูผู้สอนแทนสามารถกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE):</span>
+                <span className="text-emerald-800 text-[11px]">
+                  เมื่อท่านกดปุ่ม <strong>"✅ กดรับทราบในระบบ"</strong> ระบบจะบันทึกผลทันที และส่งข้อความ LINE Flex Message ไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปทันทีครับ
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1260,7 +1343,7 @@ ${subAckUrl}`;
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-all text-center disabled:opacity-50"
                           >
                             <CheckSquare className="w-3.5 h-3.5" />
-                            <span>{acknowledgingId === req.id ? 'กำลังบันทึกรับทราบ...' : '✅ กดรับทราบการสอนแทน'}</span>
+                            <span>{acknowledgingId === req.id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
                           </button>
                         </div>
                       ) : (

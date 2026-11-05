@@ -411,9 +411,9 @@ export default function App() {
     const newReq = storage.createRequest(formData);
 
     if (newReq.hasClasses && newReq.substituteStatus !== 'acknowledged') {
-      // มีภาระงานสอนแทน: ต้องให้ครูผู้สอนแทนกดรับทราบก่อน จึงค่อยส่ง LINE Flex ให้หัวหน้าสาขา!
+      // มีภาระงานสอนแทน: ครูผู้สอนแทนกดในระบบได้เลย (ไม่ต้องกดผ่าน LINE) แล้วระบบจะส่ง Flex ให้หัวหน้าสาขาทันที
       refreshAllData();
-      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! มีภาระคาบสอน ระบบจะรอให้ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูผู้สอนแทน'}) กดรับทราบในระบบก่อน จึงจะแจ้งเตือนหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติ ⏳`, 'info');
+      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูผู้สอนแทน'}) สามารถกดรับทราบในระบบได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex แจ้งเตือนหัวหน้าสาขา (${newReq.assignedApproverName}) ทันที 📲`, 'info');
     } else {
       // กรณีไม่มีคาบสอน: ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
       refreshAllData();
@@ -816,8 +816,14 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
-                💡 เมื่อท่านกด <strong>"รับทราบภาระงานสอนแทน"</strong> ระบบจะบันทึกผลและส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขา เพื่อพิจารณาอนุมัติคำขอทันทีครับ
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs leading-relaxed flex items-start gap-2.5">
+                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block text-emerald-900 font-bold">✨ ครูผู้สอนแทนกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE):</strong>
+                  <span className="text-emerald-800 text-[11px]">
+                    เมื่อท่านกดปุ่ม <strong>"✅ กดรับทราบในระบบ"</strong> ระบบจะบันทึกสถานะการสอนแทน และส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขา ({substituteAckModalReq.assignedApproverName || 'หัวหน้าสาขาวิชา'}) เพื่อพิจารณาอนุมัติคำขอทันทีครับ
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -852,7 +858,7 @@ export default function App() {
                   className="w-2/3 py-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/30 cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-98"
                 >
                   <CheckSquare className="w-4 h-4" />
-                  <span>{isSubmittingAck ? 'กำลังบันทึกและส่ง LINE...' : '✅ กดรับทราบภาระงานสอนแทนทันที'}</span>
+                  <span>{isSubmittingAck ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
                 </button>
               </div>
             </div>

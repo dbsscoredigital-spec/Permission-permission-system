@@ -315,10 +315,10 @@
       "password": "7777",
       "name": "นายเอกราช    อาจณรงค์",
       "branchName": "ธุรกิจดิจิทัล",
-      "branchId": "ธุรกิจดิจิทัล",
-      "role": "teacher",
+      "branchId": "DB",
+      "role": "approver",
       "lineId": "Uedc4422b785b7a8d1f6c85ae2eb950cf",
-      "position": "ครูผู้สอน"
+      "position": "หัวหน้าสาขาวิชาธุรกิจดิจิทัล"
     },
     {
       "id": "usr-import-85626",

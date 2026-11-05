@@ -456,6 +456,7 @@ function doGet(e) {
           submittedAt: data[i][1],
           userName: data[i][2],
           branchName: data[i][3],
+          branchId: data[i][3],
           exitDate: data[i][4],
           exitTime: data[i][5],
           returnTime: data[i][6],
@@ -486,9 +487,9 @@ function doGet(e) {
         "ครูผู้สอนแทนกดรับทราบภาระงานสอนแทนผ่านลิงก์ 1-Click สำเร็จ ส่งต่อให้หัวหน้าสาขา"
       ]);
 
-      // ส่ง LINE Flex Message ข้อความที่ 1 ให้หัวหน้าสาขาทันที!
+      // ส่ง LINE Flex Message ข้อความที่ 1 ให้หัวหน้าสาขาทันที! (บังคับส่ง isForce: true)
       if (matchedReq) {
-        sendLineFlexMessageToApprover(matchedReq);
+        sendLineFlexMessageToApprover(matchedReq, true);
       }
     }
 
@@ -847,11 +848,15 @@ function handleSubstituteAck(req) {
   // ปลดล็อกแคชเพื่อให้ส่ง Flex หาหัวหน้าสาขาได้แน่นอนเมื่อครูสอนแทนกดรับทราบ
   try {
     const scriptCache = CacheService.getScriptCache();
-    if (scriptCache) scriptCache.remove("lock_approver_flex_" + String(req && req.id || "").trim());
+    if (scriptCache) {
+      scriptCache.remove("lock_approver_flex_" + String(req && req.id || "").trim());
+      scriptCache.remove("lock_push_post_" + String(req && req.id || "").trim() + "_Uedc4422b785b7a8d1f6c85ae2eb950cf");
+      scriptCache.remove("lock_push_post_" + String(req && req.id || "").trim() + "_U81778d734346f14e047e07cb37d1ccd1");
+    }
   } catch(e) {}
 
-  // ส่ง LINE Flex ข้อความแจ้งเตือนหาหัวหน้าสาขาทันทีเมื่อครูสอนแทนกดรับทราบแล้ว
-  sendLineFlexMessageToApprover(req);
+  // ส่ง LINE Flex ข้อความแจ้งเตือนหาหัวหน้าสาขาทันทีเมื่อครูสอนแทนกดรับทราบแล้ว (บังคับส่ง ไม่ติดแคช)
+  sendLineFlexMessageToApprover(req, true);
 
   return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Substitute acknowledged and approver notified" }))
     .setMimeType(ContentService.MimeType.JSON);
@@ -916,15 +921,15 @@ function handleDeleteRequest(payload) {
 }
 
 // 3. ส่ง LINE Flex Message ข้อความที่ 1/2 ให้หัวหน้าสาขา
-// (นโยบายประหยัดโควต้า: คำขอ 1 ครั้ง ส่ง Flex แจ้งเตือนหาหัวหน้าเพียง 1 ข้อความเท่านั้น)
-function sendLineFlexMessageToApprover(req) {
+// (นโยบายประหยัดโควต้า: คำขอ 1 ครั้ง ส่ง Flex แจ้งเตือนหาหัวหน้าเพียง 1 ข้อความเท่านั้น ยกเว้นถูกบังคับส่งหลังครูสอนแทนกดรับทราบ)
+function sendLineFlexMessageToApprover(req, isForce) {
   const reqId = String(req && req.id || "").trim();
   if (!reqId) return;
 
-  // กฎเหล็ก: ป้องกันการส่ง Flex ซ้ำให้หัวหน้าเด็ดขาด (ตรวจ Cache และ Lock 15 นาที)
+  // กฎเหล็ก: ป้องกันการส่ง Flex ซ้ำให้หัวหน้าเด็ดขาด (ตรวจ Cache และ Lock 15 นาที ยกเว้นเมื่อถูกสั่งบังคับส่ง เช่น ครูสอนแทนกดรับทราบ isForce === true)
   const scriptCache = CacheService.getScriptCache();
   const cacheKey = "lock_approver_flex_" + reqId;
-  if (scriptCache && scriptCache.get(cacheKey)) {
+  if (!isForce && scriptCache && scriptCache.get(cacheKey)) {
     Logger.log("Approver Flex already sent for " + reqId + ", skipping duplicate.");
     return;
   }
@@ -935,12 +940,20 @@ function sendLineFlexMessageToApprover(req) {
   const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
-  let approverLineId = (req && req.assignedApproverLineId) || (req && req.approverLineId) || getApproverLineId(req.branchId);
-  if (!approverLineId || approverLineId.indexOf("U") !== 0) {
-    approverLineId = getUserLineId(req.assignedApproverName || req.approver || req.assignedApproverId);
+  var branchQuery = String((req && (req.branchId || req.branchName)) || "").toLowerCase();
+
+  let approverLineId = "";
+  if (branchQuery === "db" || branchQuery.indexOf("ธุรกิจ") !== -1 || branchQuery.indexOf("ดิจิทัล") !== -1) {
+    approverLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล - อนุมัติตัวเองได้)
+  } else {
+    approverLineId = (req && req.assignedApproverLineId) || (req && req.approverLineId) || getApproverLineId(req.branchId, req.userId);
+    if (!approverLineId || approverLineId.indexOf("U") !== 0 || approverLineId.indexOf("U_") === 0) {
+      approverLineId = getUserLineId(req.assignedApproverName || req.approver || req.assignedApproverId);
+    }
   }
-  if (!approverLineId || approverLineId.indexOf("U") !== 0) {
-    approverLineId = "U81778d734346f14e047e07cb37d1ccd1"; // Default to นายศรายุทธ สมสุข
+
+  if (!approverLineId || approverLineId.indexOf("U") !== 0 || approverLineId.indexOf("U_") === 0) {
+    approverLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // Default to นายเอกราช อาจณรงค์
   }
 
   let scriptUrl = "";
@@ -1343,10 +1356,10 @@ var KNOWN_LINE_MAP = {
 };
 
 // Helper: ดึง LINE ID ของหัวหน้าสาขา
-function getApproverLineId(branchId) {
+function getApproverLineId(branchId, reqUserId) {
   var bQuery = String(branchId || "").trim().toLowerCase();
   if (bQuery === "db" || bQuery.indexOf("ธุรกิจ") !== -1 || bQuery.indexOf("ดิจิทัล") !== -1) {
-    return "U81778d734346f14e047e07cb37d1ccd1"; // นายศรายุทธ สมสุข
+    return "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
   }
   if (bQuery === "me" || bQuery.indexOf("กล") !== -1) {
     return "U759b2ec7a4eee7f1c4565b9a7a8194e2"; // นายคัมภีร์ ช่วยเพชร
@@ -1394,7 +1407,7 @@ function getApproverLineId(branchId) {
     }
   }
 
-  return "U81778d734346f14e047e07cb37d1ccd1"; // Fallback to นายศรายุทธ สมสุข
+  return "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // Default to นายเอกราช อาจณรงค์
 }
 
 // Helper: ดึง LINE ID ของผู้ใช้
@@ -1402,9 +1415,22 @@ function getUserLineId(userId) {
   var raw = String(userId || "").trim();
   if (!raw) return "";
 
+  var clean = raw.replace(/\s+/g, ' ');
+
+  // Direct fast matching for key personnel
+  if (clean.indexOf("เอกราช") !== -1 || clean.indexOf("7777") !== -1 || clean === "usr-import-85625") {
+    return "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์
+  }
+  if (clean.indexOf("ศรายุทธ") !== -1 || clean.indexOf("8888") !== -1 || clean.indexOf("admin") !== -1 || clean === "usr-import-85622" || clean === "usr-admin") {
+    return "U81778d734346f14e047e07cb37d1ccd1"; // นายศรายุทธ สมสุข
+  }
+  if (clean.indexOf("วิลาวัณย์") !== -1 || clean.indexOf("bee99") !== -1 || clean === "usr-import-85623") {
+    return "U606b5325d901952b8d055d1ce9f9c921"; // นางสาววิลาวัณย์ หนูแก้ว
+  }
+
   // 1. Direct check in known map
   for (var k in KNOWN_LINE_MAP) {
-    if (raw === k || raw.indexOf(k) !== -1 || k.indexOf(raw) !== -1) {
+    if (clean === k || clean.indexOf(k) !== -1 || k.indexOf(clean) !== -1) {
       return KNOWN_LINE_MAP[k];
     }
   }
@@ -1414,11 +1440,11 @@ function getUserLineId(userId) {
   const uSheet = ss.getSheetByName("Users");
   if (uSheet && uSheet.getLastRow() > 1) {
     const uData = uSheet.getDataRange().getValues();
-    const query = raw.replace(/\\s+/g, ' ').toLowerCase();
+    const query = clean.toLowerCase();
     for (let i = 1; i < uData.length; i++) {
       const rowId = String(uData[i][0] || "").trim().toLowerCase();
       const rowUsername = String(uData[i][1] || "").trim().toLowerCase();
-      const rowName = String(uData[i][3] || "").replace(/\\s+/g, ' ').trim().toLowerCase();
+      const rowName = String(uData[i][3] || "").replace(/\s+/g, ' ').trim().toLowerCase();
       if (rowId === query || rowUsername === query || (query.length > 2 && (rowName === query || rowName.indexOf(query) !== -1 || query.indexOf(rowName) !== -1))) {
         var lId = String(uData[i][6] || "").trim();
         if (lId && lId.indexOf("U") === 0 && lId.indexOf("U_") !== 0) {

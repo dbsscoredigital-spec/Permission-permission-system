@@ -172,15 +172,32 @@ function loadServerStore(): ServerStore {
       const deletedIds = Array.isArray(parsed.deletedRequestIds) ? parsed.deletedRequestIds : [];
       const deletedSet = new Set(deletedIds);
 
-      // Load users from persistent store
-      const existingUsers = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...INITIAL_USERS];
-
-      const existingBranches = Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : [...INITIAL_BRANCHES];
-      for (const ib of INITIAL_BRANCHES) {
-        if (!existingBranches.some((eb: any) => eb.id === ib.id)) {
-          existingBranches.push(ib);
+      // Load users from persistent store and ensure department heads are up to date
+      const rawUsers = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...INITIAL_USERS];
+      const existingUsers = rawUsers.map((u: any) => {
+        if (u.id === 'usr-import-85625' || (u.name && u.name.includes('เอกราช'))) {
+          return {
+            ...u,
+            role: 'approver',
+            position: 'หัวหน้าสาขาวิชาธุรกิจดิจิทัล',
+            lineId: 'Uedc4422b785b7a8d1f6c85ae2eb950cf',
+            branchId: 'DB',
+            branchName: 'ธุรกิจดิจิทัล'
+          };
         }
-      }
+        return u;
+      });
+
+      // Synchronize branches with authoritative branch heads (self-approval allowed)
+      const existingBranches = INITIAL_BRANCHES.map(ib => {
+        const found = Array.isArray(parsed.branches) ? parsed.branches.find((b: any) => b.id === ib.id) : null;
+        return {
+          ...ib,
+          ...(found || {}),
+          approverUserId: ib.approverUserId,
+          approverName: ib.approverName
+        };
+      });
 
       return {
         requests: rawRequests.map(sanitizeRequest).filter((r: any) => r && !deletedSet.has(r.id)),
@@ -1792,12 +1809,10 @@ async function startServer() {
       // Dispatch LINE Flex Message directly to Department Head when substitute acknowledges
       if (substituteStatus === 'acknowledged' && updated) {
         const token = getEffectiveToken();
+        const b = ((updated.branchId || updated.branchName || '') as string).toLowerCase();
         let approverLineId = '';
-        const b = String(updated.branchName || updated.branchId || '').toLowerCase();
-        const reqUser = String(updated.userName || '').trim();
-        const isReqEkarat = updated.userId === 'usr-import-85625' || reqUser.includes('เอกราช');
         if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') {
-          approverLineId = isReqEkarat ? 'U81778d734346f14e047e07cb37d1ccd1' : 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
+          approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
         } else if (b.includes('กล') || b === 'me') {
           approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
         } else if (b.includes('บัญชี') || b === 'ac') {
@@ -1815,7 +1830,7 @@ async function startServer() {
         }
 
         if (!approverLineId) {
-          approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
+          approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
         }
 
         if (token && approverLineId && approverLineId.startsWith('U')) {

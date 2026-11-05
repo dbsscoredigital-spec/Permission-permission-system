@@ -1,4 +1,4 @@
-import { User, Branch, ExitRequest, ApprovalLog, SystemSettings, RequestStatus } from '../types';
+import { User, Branch, ExitRequest, ApprovalLog, SystemSettings, RequestStatus, Role } from '../types';
 import { INITIAL_USERS, INITIAL_BRANCHES, INITIAL_REQUESTS, INITIAL_APPROVAL_LOGS, INITIAL_SETTINGS } from '../data/initialData';
 
 const KEYS = {
@@ -502,67 +502,88 @@ export class StorageService {
     }
   }
 
-  // Automatically find approver by branch (always requires separate approver, no self-approvals)
-  public getApproverForBranch(branchId: string, requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
+  // Automatically find approver by branch (Department Heads can approve their own requests)
+  public getApproverForBranch(branchId: string, _requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
     const branches = this.getBranches();
     const branch = branches.find(b => b.id === branchId || b.name === branchId);
     const users = this.getUsers();
 
-    // Specific branch guarantee for ธุรกิจดิจิทัล (Head of branch is นายเอกราช อาจณรงค์)
     const bLower = (branchId || '').toLowerCase();
+
+    // 1. สาขาธุรกิจดิจิทัล (DB) - หัวหน้าสาขาคือนายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
     if (bLower === 'db' || bLower.includes('ธุรกิจ') || bLower.includes('ดิจิทัล')) {
-      const isReqEkarat = requesterUserId === 'usr-import-85625' || (typeof requesterUserId === 'string' && requesterUserId.includes('เอกราช'));
-      if (isReqEkarat) {
-        return {
-          approverId: 'usr-admin',
-          approverName: 'นายศรายุทธ สมสุข (รองผู้อำนวยการฝ่ายวิชาการ / ผู้ดูแลระบบ)',
-          lineId: 'U81778d734346f14e047e07cb37d1ccd1'
-        };
-      }
       const u = users.find(user => user.id === 'usr-import-85625' || user.lineId === 'Uedc4422b785b7a8d1f6c85ae2eb950cf');
       return {
         approverId: 'usr-import-85625',
-        approverName: u ? `${u.name} (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)` : 'นายเอกราช       อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
+        approverName: u ? `${u.name} (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)` : 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
         lineId: u?.lineId || 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
       };
     }
 
-    // 1. Look for active department head in this branch who is NOT the requester
-    if (branch && branch.approverUserId && requesterUserId !== branch.approverUserId) {
+    // 2. สาขาช่างกลโรงงาน (ME) - หัวหน้าสาขาคือนายคัมภีร์ ช่วยเพชร
+    if (bLower === 'me' || bLower.includes('กล')) {
+      const u = users.find(user => user.id === 'usr-import-64665' || user.lineId === 'U759b2ec7a4eee7f1c4565b9a7a8194e2');
+      return {
+        approverId: 'usr-import-64665',
+        approverName: u ? `${u.name} (หัวหน้าสาขาช่างกลโรงงาน)` : 'นายคัมภีร์ ช่วยเพชร (หัวหน้าสาขาช่างกลโรงงาน)',
+        lineId: u?.lineId || 'U759b2ec7a4eee7f1c4565b9a7a8194e2'
+      };
+    }
+
+    // 3. สาขาการบัญชี (AC) - หัวหน้าสาขาคือนางสาวอรอนงค์ ขุนทองแก้ว
+    if (bLower === 'ac' || bLower.includes('บัญชี')) {
+      const u = users.find(user => user.id === 'usr-import-95822' || user.lineId === 'U84c5267a9feee6f8968d324a3c79c4af');
+      return {
+        approverId: 'usr-import-95822',
+        approverName: u ? `${u.name} (หัวหน้าสาขาการบัญชี)` : 'นางสาวอรอนงค์ ขุนทองแก้ว (หัวหน้าสาขาการบัญชี)',
+        lineId: u?.lineId || 'U84c5267a9feee6f8968d324a3c79c4af'
+      };
+    }
+
+    // 4. สาขาช่างไฟฟ้า (EL) - หัวหน้าสาขาคือนางนฤมล เรืองพุฒ
+    if (bLower === 'el' || bLower.includes('ไฟฟ้า')) {
+      const u = users.find(user => user.id === 'usr-import-68034' || user.lineId === 'U013dfdf06ab0c66db7d898540077d80e');
+      return {
+        approverId: 'usr-import-68034',
+        approverName: u ? `${u.name} (หัวหน้าสาขาช่างไฟฟ้า)` : 'นางนฤมล เรืองพุฒ (หัวหน้าสาขาช่างไฟฟ้า)',
+        lineId: u?.lineId || 'U013dfdf06ab0c66db7d898540077d80e'
+      };
+    }
+
+    // 5. สาขาช่างยนต์ (AT) - หัวหน้าสาขาคือนายฉัตรชัย ดิษฐาน
+    if (bLower === 'at' || bLower.includes('ยนต์')) {
+      const u = users.find(user => user.id === 'usr-import-71241' || user.lineId === 'U00d0bcb58a525b4a9e29999ddd8c8246');
+      return {
+        approverId: 'usr-import-71241',
+        approverName: u ? `${u.name} (หัวหน้าสาขาช่างยนต์)` : 'นายฉัตรชัย ดิษฐาน (หัวหน้าสาขาช่างยนต์)',
+        lineId: u?.lineId || 'U00d0bcb58a525b4a9e29999ddd8c8246'
+      };
+    }
+
+    // 6. แผนกครูสามัญ (GEN) - หัวหน้าคือคุณครูกนกวรรณ ธนาพล
+    if (bLower === 'gen' || bLower.includes('สามัญ')) {
+      const u = users.find(user => user.id === 'usr-915068' || user.lineId === 'U0b1a90a74dacb8fbb2be07d19189932c');
+      return {
+        approverId: 'usr-915068',
+        approverName: u ? `${u.name} (หัวหน้าครูสามัญ)` : 'นางกนกวรรณ ธนาพล (หัวหน้าครูสามัญ)',
+        lineId: u?.lineId || 'U0b1a90a74dacb8fbb2be07d19189932c'
+      };
+    }
+
+    // Default by branch configuration
+    if (branch && branch.approverUserId) {
       const u = users.find(user => user.id === branch.approverUserId);
-      return { 
-        approverId: branch.approverUserId, 
+      return {
+        approverId: branch.approverUserId,
         approverName: branch.approverName || (u ? `${u.name} (หัวหน้าสาขา${branch.name})` : 'หัวหน้าสาขา'),
         lineId: u?.lineId
       };
     }
 
-    const branchApproverUser = users.find(u => (u.branchId === branchId || (branch && u.branchName === branch.name)) && u.role === 'approver' && u.id !== requesterUserId);
-    if (branchApproverUser) {
-      return {
-        approverId: branchApproverUser.id,
-        approverName: branchApproverUser.name + ' (หัวหน้าสาขา' + branchApproverUser.branchName + ')',
-        lineId: branchApproverUser.lineId
-      };
-    }
-
-    // 2. If requester IS the department head of this branch, route to Senior Approver / Academic Head (e.g. นางกนกวรรณ ธนาพล หรือ ผู้บริหาร)
-    const seniorApprover = users.find(u => u.id === 'usr-915068' && u.id !== requesterUserId) || users.find(u => u.role === 'admin' && u.id !== requesterUserId) || users[0];
-    if (seniorApprover) {
-      return {
-        approverId: seniorApprover.id,
-        approverName: `${seniorApprover.name} (ฝ่ายวิชาการ/ผู้บริหาร)`,
-        lineId: seniorApprover.lineId
-      };
-    }
-
-    // Fallback to general head
-    const gen = branches.find(b => b.id === 'GEN');
-    const genUser = users.find(user => user.id === (gen ? gen.approverUserId : 'usr-915068'));
     return {
-      approverId: gen ? gen.approverUserId : 'usr-915068',
-      approverName: gen ? gen.approverName : 'หัวหน้าครูสามัญ',
-      lineId: genUser?.lineId
+      approverId: 'usr-import-85625',
+      approverName: 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
+      lineId: 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
     };
   }
 
@@ -794,7 +815,10 @@ export class StorageService {
     const thaiTimestamp = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     let updated: ExitRequest;
-    const branchApprover = this.getApproverForBranch(fallbackReq?.branchId || fallbackReq?.branchName || 'DB', fallbackReq?.userId);
+    const existingReq = index !== -1 ? requests[index] : null;
+    const reqBranch = existingReq?.branchId || existingReq?.branchName || fallbackReq?.branchId || fallbackReq?.branchName || 'DB';
+    const reqUser = existingReq?.userId || existingReq?.userName || fallbackReq?.userId || fallbackReq?.userName || '';
+    const branchApprover = this.getApproverForBranch(reqBranch, reqUser);
 
     if (index === -1) {
       updated = {
@@ -802,7 +826,7 @@ export class StorageService {
         userId: fallbackReq?.userId || 'temp',
         userName: fallbackReq?.userName || 'ครูผู้ขอออกนอก',
         position: fallbackReq?.position || 'ครูผู้สอน',
-        branchId: fallbackReq?.branchId || 'DB',
+        branchId: reqBranch,
         branchName: fallbackReq?.branchName || 'ธุรกิจดิจิทัล',
         exitDate: fallbackReq?.exitDate || new Date().toISOString().slice(0, 10),
         exitTime: fallbackReq?.exitTime || '10:00',
@@ -810,9 +834,9 @@ export class StorageService {
         destination: fallbackReq?.destination || 'ไปราชการ / ติดต่อภารกิจ',
         reason: fallbackReq?.reason || 'ขอความอนุเคราะห์สอนแทน',
         travelMethod: fallbackReq?.travelMethod || 'ยานพาหนะส่วนตัว',
-        assignedApproverId: fallbackReq?.assignedApproverId || branchApprover.approverId,
-        assignedApproverName: fallbackReq?.assignedApproverName || branchApprover.approverName,
-        assignedApproverLineId: fallbackReq?.assignedApproverLineId || branchApprover.lineId,
+        assignedApproverId: branchApprover.approverId,
+        assignedApproverName: branchApprover.approverName,
+        assignedApproverLineId: branchApprover.lineId,
         status: (fallbackReq?.status as any) || 'pending',
         hasClasses: true,
         substituteStatus: 'acknowledged',
@@ -829,13 +853,11 @@ export class StorageService {
         ...requests[index],
         ...(fallbackReq || {}),
         substituteStatus: 'acknowledged',
-        substituteAcknowledgedAt: thaiTimestamp
+        substituteAcknowledgedAt: thaiTimestamp,
+        assignedApproverId: branchApprover.approverId,
+        assignedApproverName: branchApprover.approverName,
+        assignedApproverLineId: branchApprover.lineId
       };
-      if (!updated.assignedApproverLineId || !updated.assignedApproverLineId.startsWith('U') || updated.assignedApproverLineId.startsWith('U_') || updated.assignedApproverLineId === 'U606b5325d901952b8d055d1ce9f9c921' || (updated.branchId && (updated.branchId === 'DB' || updated.branchName?.includes('ธุรกิจ')))) {
-        updated.assignedApproverId = branchApprover.approverId;
-        updated.assignedApproverName = branchApprover.approverName;
-        updated.assignedApproverLineId = branchApprover.lineId;
-      }
       requests[index] = updated;
     }
 
@@ -873,8 +895,9 @@ export class StorageService {
     this.syncToAppsScript('substitute_ack', {
       ...updated,
       lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken,
-      assignedApproverLineId: updated.assignedApproverLineId,
-      assignedApproverName: updated.assignedApproverName
+      assignedApproverLineId: branchApprover.lineId,
+      assignedApproverName: branchApprover.approverName,
+      force: true
     });
     return updated;
   }
@@ -1235,14 +1258,14 @@ export class StorageService {
                   }));
                 this.saveRequests(gasRequests);
 
-                const sanitizeIncomingUsers = (rawList: User[]) => {
+                const sanitizeIncomingUsers = (rawList: User[]): User[] => {
                   return rawList.map(u => {
                     const uName = (u.name || '').replace(/\s+/g, ' ').trim();
                     if (uName.includes('เอกราช') || u.id === 'usr-import-85625') {
                       return {
                         ...u,
                         lineId: 'Uedc4422b785b7a8d1f6c85ae2eb950cf',
-                        role: 'approver',
+                        role: 'approver' as const,
                         position: 'หัวหน้าสาขาวิชาธุรกิจดิจิทัล',
                         branchId: 'DB',
                         branchName: 'ธุรกิจดิจิทัล'
@@ -1252,7 +1275,7 @@ export class StorageService {
                       return {
                         ...u,
                         lineId: 'U81778d734346f14e047e07cb37d1ccd1',
-                        role: u.role === 'admin' ? 'admin' : 'teacher',
+                        role: (u.role === 'admin' ? 'admin' : 'teacher') as Role,
                         position: u.role === 'admin' ? 'ผู้ดูแลระบบ / รองผู้อำนวยการ' : 'ครูผู้สอน',
                         branchId: 'DB',
                         branchName: 'ธุรกิจดิจิทัล'
@@ -1262,7 +1285,7 @@ export class StorageService {
                       return {
                         ...u,
                         lineId: 'U606b5325d901952b8d055d1ce9f9c921',
-                        role: 'teacher',
+                        role: 'teacher' as const,
                         position: 'ครูผู้สอน',
                         branchId: 'DB',
                         branchName: 'ธุรกิจดิจิทัล'

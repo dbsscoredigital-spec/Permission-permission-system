@@ -134,9 +134,13 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
     setTimeout(() => setSyncingLine(false), 800);
   };
 
-  // Requests assigned to this department head to review (teachers in their branch)
+  // Requests assigned to this department head to review (teachers in their branch, self-requests, or assigned by ID/name)
   const pendingTeacherRequests = requests.filter(r => 
-    r.assignedApproverId === currentUser.id && r.status === 'pending'
+    r.status === 'pending' && (
+      r.assignedApproverId === currentUser.id ||
+      (Boolean(currentUser.name) && Boolean(r.assignedApproverName?.includes(currentUser.name))) ||
+      (Boolean(currentUser.branchId) && (r.branchId || '').trim().toLowerCase() === currentUser.branchId.trim().toLowerCase())
+    )
   );
 
   // Helper to determine if a request belongs to this department head's branch

@@ -352,28 +352,28 @@ export const INITIAL_BRANCHES: Branch[] = [
     "id": "AC",
     "name": "การบัญชี",
     "approverUserId": "usr-import-95822",
-    "approverName": "นางสาวอรอนงค์    ขุนทองแก้ว (ครูผู้สอน)",
+    "approverName": "นางสาวอรอนงค์ ขุนทองแก้ว (หัวหน้าสาขาวิชาการบัญชี)",
     "color": "#059669"
   },
   {
     "id": "EL",
     "name": "ช่างไฟฟ้า",
     "approverUserId": "usr-import-68034",
-    "approverName": "นางนฤมล         เรืองพุฒ (ครูผู้สอน)",
+    "approverName": "นางนฤมล เรืองพุฒ (หัวหน้าสาขาวิชาช่างไฟฟ้า)",
     "color": "#d97706"
   },
   {
     "id": "AT",
     "name": "ช่างยนต์",
     "approverUserId": "usr-import-71241",
-    "approverName": "นายฉัตรชัย         ดิษฐาน (ครูผู้สอน)",
+    "approverName": "นายฉัตรชัย ดิษฐาน (หัวหน้าสาขาวิชาช่างยนต์)",
     "color": "#ea580c"
   },
   {
     "id": "GEN",
     "name": "ครูสามัญ",
     "approverUserId": "usr-915068",
-    "approverName": "นางกนกวรรณ ธนาพล (ครู)",
+    "approverName": "นางกนกวรรณ ธนาพล (หัวหน้าแผนกวิชาสามัญสัมพันธ์)",
     "color": "#db2777"
   }
 ];

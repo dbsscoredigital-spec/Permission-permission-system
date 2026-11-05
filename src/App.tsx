@@ -331,7 +331,7 @@ export default function App() {
         if (found) {
           // If substitute teacher is specified and current user isn't that teacher, auto switch to substitute teacher
           if (found.substituteTeacherName && (!currentUser || currentUser.name !== found.substituteTeacherName)) {
-            const clean = (s: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
+            const clean = (s?: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
             const subUser = users.find(u => 
               (found!.substituteTeacherId && u.id === found!.substituteTeacherId) ||
               clean(u.name) === clean(found!.substituteTeacherName) ||
@@ -357,7 +357,7 @@ export default function App() {
               refreshAllData();
               setSubstituteAckModalReq(reFound);
               if (reFound.substituteTeacherName) {
-                const clean = (s: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
+                const clean = (s?: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
                 const subUser = users.find(u => 
                   clean(u.name) === clean(reFound.substituteTeacherName) ||
                   (u.name && reFound.substituteTeacherName && (u.name.includes(reFound.substituteTeacherName) || reFound.substituteTeacherName.includes(u.name)))

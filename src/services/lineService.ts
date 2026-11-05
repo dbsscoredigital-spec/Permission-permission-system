@@ -347,20 +347,12 @@ export class LineService {
     // Find approver's LINE ID:
     // Rule: Branch Head (หัวหน้าสาขา) is authoritative.
     // สาขาวิชาธุรกิจดิจิทัล -> หัวหน้าสาขาคือนายเอกราช อาจณรงค์ (Uedc4422b785b7a8d1f6c85ae2eb950cf)
-    // (เว้นแต่กรณีที่นายเอกราชเป็นผู้ยื่นคำขอเอง จะส่งให้รองผู้อำนวยการ / Admin นายศรายุทธ สมสุข พิจารณา)
     const b = (req.branchId || req.branchName || '').toLowerCase();
-    const reqUserName = (req.userName || '').trim();
-    const isReqEkarat = req.userId === 'usr-import-85625' || reqUserName.includes('เอกราช');
     let approverLineId = '';
 
     if (b === 'db' || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
-      if (isReqEkarat) {
-        approverLineId = 'U81778d734346f14e047e07cb37d1ccd1'; // นายศรายุทธ สมสุข (รอง ผอ. / Admin)
-        req.assignedApproverName = 'นายศรายุทธ สมสุข (รองผู้อำนวยการฝ่ายวิชาการ / ผู้ดูแลระบบ)';
-      } else {
-        approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
-        req.assignedApproverName = 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)';
-      }
+      approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
+      req.assignedApproverName = 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)';
     } else if (b === 'me' || b.includes('กล')) {
       approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2'; // นายคัมภีร์ ช่วยเพชร
     } else if (b === 'ac' || b.includes('บัญชี')) {
@@ -398,9 +390,9 @@ export class LineService {
       approverLineId = req.assignedApproverLineId;
     }
 
-    // Default fallback to นายศรายุทธ สมสุข
+    // Default fallback (For ธุรกิจดิจิทัล, defaults to นายเอกราช อาจณรงค์ Uedc4422b785b7a8d1f6c85ae2eb950cf)
     if (!approverLineId) {
-      approverLineId = 'U81778d734346f14e047e07cb37d1ccd1';
+      approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
     }
 
     // Build and push real LINE Flex Message to approver immediately

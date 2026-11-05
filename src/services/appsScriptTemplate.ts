@@ -106,7 +106,7 @@ function doPost(e) {
       var pReqId = String(pushPayload.reqId || "").trim();
       var isForced = pushPayload.force === true || pReqId.indexOf("_ack_") !== -1;
       if (!pReqId && pushMsgs.length > 0) {
-        var mMatch = String(pushMsgs[0].altText || "").match(/REQ-\d+-\d+/i);
+        var mMatch = String(pushMsgs[0].altText || "").match(/REQ-\\d+-\\d+/i);
         if (mMatch) pReqId = mMatch[0];
       }
       if (pReqId && !isForced) {
@@ -217,7 +217,7 @@ function doGet(e) {
     // ป้องกันการส่ง Flex ซ้ำซ้อน
     var pReqId = String(p.reqId || p.requestId || "").trim();
     if (!pReqId && msgs.length > 0) {
-      var mMatch = String(msgs[0].altText || "").match(/REQ-\d+-\d+/i);
+      var mMatch = String(msgs[0].altText || "").match(/REQ-\\d+-\\d+/i);
       if (mMatch) pReqId = mMatch[0];
     }
     if (pReqId) {
@@ -694,7 +694,7 @@ function handleLineEvents(events) {
             {
               type: "text",
               text: isApprove
-                ? "✅ อนุมัติคำขอ " + reqId + " ของครู" + matchedReq.userName + " เรียบร้อยแล้ว\n\n✓ ในระบบเว็บได้เปลี่ยนสถานะเป็น «อนุมัติแล้ว» เรียบร้อยแล้ว\n✓ ระบบส่งบัตรผ่าน QR Code ให้แก่ครูผู้ขอทาง LINE เรียบร้อยแล้วครับ"
+                ? "✅ อนุมัติคำขอ " + reqId + " ของครู" + matchedReq.userName + " เรียบร้อยแล้ว\\n\\n✓ ในระบบเว็บได้เปลี่ยนสถานะเป็น «อนุมัติแล้ว» เรียบร้อยแล้ว\\n✓ ระบบส่งบัตรผ่าน QR Code ให้แก่ครูผู้ขอทาง LINE เรียบร้อยแล้วครับ"
                 : "❌ บันทึกผล «ไม่อนุมัติ» คำขอ " + reqId + " เรียบร้อยแล้ว"
             }
           ]);
@@ -1415,7 +1415,7 @@ function getUserLineId(userId) {
   var raw = String(userId || "").trim();
   if (!raw) return "";
 
-  var clean = raw.replace(/\s+/g, ' ');
+  var clean = raw.replace(/\\s+/g, ' ');
 
   // Direct fast matching for key personnel
   if (clean.indexOf("เอกราช") !== -1 || clean.indexOf("7777") !== -1 || clean === "usr-import-85625") {
@@ -1444,7 +1444,7 @@ function getUserLineId(userId) {
     for (let i = 1; i < uData.length; i++) {
       const rowId = String(uData[i][0] || "").trim().toLowerCase();
       const rowUsername = String(uData[i][1] || "").trim().toLowerCase();
-      const rowName = String(uData[i][3] || "").replace(/\s+/g, ' ').trim().toLowerCase();
+      const rowName = String(uData[i][3] || "").replace(/\\s+/g, ' ').trim().toLowerCase();
       if (rowId === query || rowUsername === query || (query.length > 2 && (rowName === query || rowName.indexOf(query) !== -1 || query.indexOf(rowName) !== -1))) {
         var lId = String(uData[i][6] || "").trim();
         if (lId && lId.indexOf("U") === 0 && lId.indexOf("U_") !== 0) {

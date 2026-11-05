@@ -43,7 +43,7 @@
       "userLineId": "U_ADMIN_CENTRAL",
       "teacherLineId": "U_ADMIN_CENTRAL",
       "userUsername": "admin",
-      "submittedAt": "2569-11-04 09:16",
+      "submittedAt": "",
       "exitDate": "2026-11-04",
       "exitTime": "10:17",
       "returnTime": "12:17",
@@ -410,7 +410,7 @@
       "id": "DB",
       "name": "ธุรกิจดิจิทัล",
       "approverUserId": "usr-import-85625",
-      "approverName": "นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
+      "approverName": "นายเอกราช       อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
       "color": "#0284c7"
     },
     {

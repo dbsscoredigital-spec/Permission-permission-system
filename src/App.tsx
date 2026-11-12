@@ -103,9 +103,6 @@ export default function App() {
     message: string;
   } | null>(null);
 
-  // 1-Click Direct Substitute Teaching Ack Modal (Triggered by LINE share link ?action=sub_ack&reqId=...)
-  const [substituteAckModalReq, setSubstituteAckModalReq] = useState<ExitRequest | null>(null);
-  const [isSubmittingAck, setIsSubmittingAck] = useState<boolean>(false);
   const handledUrlActionRef = useRef<boolean>(false);
 
   // Toast Notification
@@ -320,58 +317,6 @@ export default function App() {
             if (reFound) setQrPassReq(reFound);
           }).catch(() => {});
         }
-      } else if (reqId && (action === 'substitute_ack' || action === 'sub_ack' || action === 'substitute' || urlParams.get('subtab') === 'substitute-tasks')) {
-        handledUrlActionRef.current = true;
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setActiveTab('teacher');
-
-        // Look for request in existing requests
-        let found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase()) || storage.getRequestById(reqId);
-
-        if (found) {
-          // If substitute teacher is specified and current user isn't that teacher, auto switch to substitute teacher
-          if (found.substituteTeacherName && (!currentUser || currentUser.name !== found.substituteTeacherName)) {
-            const clean = (s?: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
-            const subUser = users.find(u => 
-              (found!.substituteTeacherId && u.id === found!.substituteTeacherId) ||
-              clean(u.name) === clean(found!.substituteTeacherName) ||
-              (u.name && found!.substituteTeacherName && (u.name.includes(found!.substituteTeacherName) || found!.substituteTeacherName.includes(u.name)))
-            );
-            if (subUser) {
-              handleUserChange(subUser);
-            }
-          }
-
-          setSubstituteAckModalReq(found);
-          if (found.substituteStatus === 'acknowledged') {
-            showToast(`✓ คำขอสอนแทน ${found.id} ได้รับทราบเรียบร้อยแล้ว`, 'info');
-          } else {
-            showToast(`เปิดคำขอสอนแทน: ${found.id} ของครู${found.userName}`, 'info');
-          }
-        } else {
-          // Try sync from server/Google Sheets
-          storage.syncWithServer().then((syncRes) => {
-            const reqList = syncRes.allRequests || storage.getRequests();
-            const reFound = reqList.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-            if (reFound) {
-              refreshAllData();
-              setSubstituteAckModalReq(reFound);
-              if (reFound.substituteTeacherName) {
-                const clean = (s?: string) => (s || '').replace(/^(นาย|นางสาว|นาง|ว่าที่\s*ร\.ต\.|ดร\.|อ\.)\s*/i, '').replace(/\s+/g, '').toLowerCase();
-                const subUser = users.find(u => 
-                  clean(u.name) === clean(reFound.substituteTeacherName) ||
-                  (u.name && reFound.substituteTeacherName && (u.name.includes(reFound.substituteTeacherName) || reFound.substituteTeacherName.includes(u.name)))
-                );
-                if (subUser) handleUserChange(subUser);
-              }
-              if (reFound.substituteStatus === 'acknowledged') {
-                showToast(`✓ คำขอสอนแทน ${reFound.id} ได้รับทราบเรียบร้อยแล้ว`, 'info');
-              } else {
-                showToast(`เปิดคำขอสอนแทน: ${reFound.id} ของครู${reFound.userName}`, 'info');
-              }
-            }
-          }).catch(() => {});
-        }
       }
     } catch {
       // ignore
@@ -410,77 +355,25 @@ export default function App() {
   const handleSubmitRequest = async (formData: any) => {
     const newReq = storage.createRequest(formData);
 
-    if (newReq.hasClasses && newReq.substituteStatus !== 'acknowledged') {
-      // มีภาระงานสอนแทน: ครูผู้สอนแทนกดในระบบได้เลย (ไม่ต้องกดผ่าน LINE) แล้วระบบจะส่ง Flex ให้หัวหน้าสาขาทันที
-      refreshAllData();
-      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ครูผู้สอนแทน (${newReq.substituteTeacherName || 'ครูผู้สอนแทน'}) สามารถกดรับทราบในระบบได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex แจ้งเตือนหัวหน้าสาขา (${newReq.assignedApproverName}) ทันที 📲`, 'info');
-    } else {
-      // กรณีไม่มีคาบสอน: ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
-      refreshAllData();
-      const lineRes = await lineService.sendApproverNotification(newReq);
-      refreshAllData();
+    // ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขาประจำสังกัดเพื่อพิจารณาอนุมัติทันที
+    refreshAllData();
+    const lineRes = await lineService.sendApproverNotification(newReq);
+    refreshAllData();
 
-      if (lineRes.success) {
-        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติแล้ว 📲`, 'success');
+    if (lineRes.success) {
+      showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่ง LINE แจ้งเตือนไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติแล้ว 📲`, 'success');
+    } else {
+      if (lineRes.code === 'TOKEN_REQUIRED') {
+        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อรอพิจารณาอนุมัติ`, 'info');
       } else {
-        if (lineRes.code === 'TOKEN_REQUIRED') {
-          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อรอพิจารณาอนุมัติ`, 'info');
-        } else {
-          showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติ (${lineRes.message})`, 'info');
-        }
+        showToast(`ยื่นคำขอ ${newReq.id} สำเร็จ! ส่งตรงไปยังหัวหน้าสาขา (${newReq.assignedApproverName}) เพื่อพิจารณาอนุมัติ`, 'info');
       }
     }
     return newReq;
   };
 
-  // 1.1 Acknowledge Substitute Teaching (In-System Web Action)
-  // When acknowledged in web: Triggers LINE Message 1 of 2 to Department Head or Deputy Director!
-  const handleAcknowledgeSubstitute = async (requestId: string) => {
-    const now = new Date();
-    const thaiTimestamp = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    // 1. Instant optimistic state update - status changes on screen in 0ms!
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, substituteStatus: 'acknowledged', substituteAcknowledgedAt: thaiTimestamp } : r));
-    setSubstituteAckModalReq(prev => prev && prev.id === requestId ? { ...prev, substituteStatus: 'acknowledged', substituteAcknowledgedAt: thaiTimestamp } : prev);
-
-    // 2. Persist to storage & backend server
-    const targetUser = currentUser?.id 
-      ? currentUser 
-      : (users.find(u => u.name === substituteAckModalReq?.substituteTeacherName) || users.find(u => u.role === 'teacher') || currentUser);
-    const updated = storage.acknowledgeSubstitute(requestId, targetUser, substituteAckModalReq || undefined);
-    if (!isLoggedIn && targetUser) {
-      handleLoginSuccess(targetUser);
-    }
-    if (updated) {
-      refreshAllData();
-      showToast(`✅ รับทราบภาระงานสอนแทนคำขอ ${requestId} เรียบร้อยแล้ว`, 'success');
-
-      // 3. Send LINE notification to approver in background (never blocks UI or reverts status)
-      try {
-        const lineRes = await lineService.sendApproverNotification(updated, true);
-        refreshAllData();
-        const approverTitle = updated.assignedApproverId === 'usr-admin' ? 'รอง ผอ.ฝ่ายวิชาการ' : 'หัวหน้าสาขา';
-        if (lineRes.success) {
-          showToast(`ส่ง LINE แจ้งเตือนไปยัง${approverTitle} (${updated.assignedApproverName}) เรียบร้อยแล้ว 📲`, 'success');
-        }
-      } catch (lineErr) {
-        console.warn('LINE notification background error:', lineErr);
-      }
-    }
-  };
-
-  // 1.2 Decline Substitute Teaching (In-System Web Action)
-  const handleDeclineSubstitute = (requestId: string, reason: string) => {
-    // 1. Instant optimistic state update
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, substituteStatus: 'declined', substituteDeclineReason: reason } : r));
-
-    // 2. Persist to storage & backend server
-    const updated = storage.declineSubstitute(requestId, currentUser, reason);
-    if (updated) {
-      refreshAllData();
-      showToast(`ท่านได้แจ้งไม่สะดวกสอนแทน (${reason}) ในระบบแล้ว`, 'info');
-    }
-  };
+  const handleAcknowledgeSubstitute = async (_requestId: string) => {};
+  const handleDeclineSubstitute = (_requestId: string, _reason: string) => {};
 
   // 2. Approve Request (Triggers LINE Message back to Teacher)
   const handleApproveRequest = async (requestId: string) => {
@@ -683,190 +576,7 @@ export default function App() {
     );
   };
 
-  // 1-Click Direct Substitute Teaching Ack Modal (Opened via LINE link ?action=substitute_ack&reqId=...)
-  const renderSubstituteAckModal = () => {
-    if (!substituteAckModalReq) return null;
 
-    const formatReadableDate = (raw?: string) => {
-      if (!raw) return '-';
-      const s = String(raw).trim();
-      if (s.includes('T')) {
-        const d = new Date(s);
-        if (!isNaN(d.getTime())) {
-          const local = new Date(d.getTime() + 7 * 3600 * 1000);
-          const y = local.getUTCFullYear() < 2500 ? local.getUTCFullYear() + 543 : local.getUTCFullYear();
-          const mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-          return `${local.getUTCDate()} ${mNames[local.getUTCMonth()]} ${y}`;
-        }
-      }
-      return s;
-    };
-
-    const formatReadableTime = (raw?: string) => {
-      if (!raw) return '-';
-      const s = String(raw).trim();
-      if (/^\d{1,2}:\d{2}$/.test(s)) return s;
-      if (s.includes('T')) {
-        const d = new Date(s);
-        if (!isNaN(d.getTime())) {
-          const h = String((d.getUTCHours() + 7) % 24).padStart(2, '0');
-          const m = String(d.getUTCMinutes()).padStart(2, '0');
-          return `${h}:${m}`;
-        }
-      }
-      return s.slice(0, 5);
-    };
-
-    const displayDate = formatReadableDate(substituteAckModalReq.exitDate);
-    const displayTime = `${formatReadableTime(substituteAckModalReq.exitTime)} – ${formatReadableTime(substituteAckModalReq.returnTime)}`;
-
-    return (
-      <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-        <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 relative animate-in zoom-in-95 my-6">
-          <button
-            type="button"
-            onClick={() => {
-              setSubstituteAckModalReq(null);
-              window.history.replaceState({}, document.title, window.location.pathname);
-            }}
-            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs">
-              <Handshake className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                รหัสคำขอ: {substituteAckModalReq.id}
-              </span>
-              <h3 className="text-lg font-black text-slate-900 mt-1">
-                คำขอความอนุเคราะห์สอนแทน
-              </h3>
-            </div>
-          </div>
-
-          <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200/80 mb-5">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-              <span className="text-slate-500">ครูผู้ขอออกนอก:</span>
-              <strong className="text-slate-900 text-sm">{substituteAckModalReq.userName} ({substituteAckModalReq.branchName})</strong>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">วัน-เวลาที่ขอสอนแทน:</span>
-              <span className="font-bold text-slate-800">{displayDate} เวลา {displayTime} น.</span>
-            </div>
-
-            <div className="p-3 bg-amber-100/70 rounded-xl border border-amber-200/90 text-amber-950 space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-xs text-amber-900">
-                <BookOpen className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>วิชาที่ขอให้สอนแทน: {substituteAckModalReq.substituteSubject || 'ภาระงานสอนประจำวัน'}</span>
-              </div>
-              {substituteAckModalReq.substituteTasks && (
-                <div className="text-[11px] text-slate-800 pt-0.5">
-                  <span className="font-semibold text-slate-900">งานที่มอบหมาย:</span> {substituteAckModalReq.substituteTasks}
-                </div>
-              )}
-              <div className="text-[10px] text-amber-800 pt-1 border-t border-amber-200/60">
-                ระบุครูผู้สอนแทน: <strong>{substituteAckModalReq.substituteTeacherName || 'ครูผู้สอนแทน'}</strong>
-              </div>
-            </div>
-
-            <div className="text-[11px] text-slate-500 pt-1">
-              สถานที่ที่ครูผู้ขอไป: <strong>{substituteAckModalReq.destination}</strong> (เหตุผล: {substituteAckModalReq.reason})
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-              <span className="text-slate-500">สถานะการรับทราบปัจจุบัน:</span>
-              {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
-                <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  รับทราบแล้ว ({substituteAckModalReq.substituteAcknowledgedAt || 'เรียบร้อย'})
-                </span>
-              ) : substituteAckModalReq.substituteStatus === 'declined' ? (
-                <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
-                  แจ้งไม่สะดวกสอนแทน
-                </span>
-              ) : (
-                <span className="font-bold px-2.5 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                  ⏳ รอท่านกดยืนยันรับทราบ
-                </span>
-              )}
-            </div>
-          </div>
-
-          {substituteAckModalReq.substituteStatus === 'acknowledged' ? (
-            <div className="space-y-3">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs leading-relaxed flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>✓ ท่านได้รับทราบภาระงานสอนแทนนี้แล้ว ระบบได้ส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปเรียบร้อยแล้วครับ</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSubstituteAckModalReq(null);
-                  window.history.replaceState({}, document.title, window.location.pathname);
-                }}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow-md transition-all"
-              >
-                ✓ รับทราบแล้ว / ปิดหน้านี้
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs leading-relaxed flex items-start gap-2.5">
-                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block text-emerald-900 font-bold">✨ ครูผู้สอนแทนกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE):</strong>
-                  <span className="text-emerald-800 text-[11px]">
-                    เมื่อท่านกดปุ่ม <strong>"✅ กดรับทราบในระบบ"</strong> ระบบจะบันทึกสถานะการสอนแทน และส่ง LINE Flex Message แจ้งเตือนไปยังหัวหน้าสาขา ({substituteAckModalReq.assignedApproverName || 'หัวหน้าสาขาวิชา'}) เพื่อพิจารณาอนุมัติคำขอทันทีครับ
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={isSubmittingAck}
-                  onClick={() => {
-                    handleDeclineSubstitute(substituteAckModalReq.id, 'ไม่สะดวกสอนแทนตามเวลาดังกล่าว');
-                    setSubstituteAckModalReq(null);
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                  }}
-                  className="w-1/3 py-3 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all disabled:opacity-50 text-center"
-                >
-                  ไม่สะดวกสอนแทน
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmittingAck}
-                  onClick={async () => {
-                    setIsSubmittingAck(true);
-                    try {
-                      await handleAcknowledgeSubstitute(substituteAckModalReq.id);
-                      setSubstituteAckModalReq(prev => prev ? {
-                        ...prev,
-                        substituteStatus: 'acknowledged',
-                        substituteAcknowledgedAt: new Date().toLocaleTimeString('th-TH')
-                      } : null);
-                      showToast(`🎉 บันทึกรับทราบภาระงานสอนแทน ${substituteAckModalReq.id} สำเร็จ!`, 'success');
-                    } finally {
-                      setIsSubmittingAck(false);
-                    }
-                  }}
-                  className="w-2/3 py-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/30 cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-98"
-                >
-                  <CheckSquare className="w-4 h-4" />
-                  <span>{isSubmittingAck ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   // If not logged in, render LoginScreen with modal overlays for direct LINE actions
   if (!isLoggedIn) {
@@ -894,7 +604,6 @@ export default function App() {
         />
 
         {/* LINE 1-Click Action Modals (Visible Immediately Without Needing Login) */}
-        {renderSubstituteAckModal()}
         {renderDirectActionResultModal()}
         {printSlipReq && <PrintSlipModal request={printSlipReq} onClose={() => setPrintSlipReq(null)} />}
         {qrPassReq && <QrPassModal request={qrPassReq} onClose={() => setQrPassReq(null)} />}
@@ -1294,10 +1003,6 @@ export default function App() {
 
       {/* Instant 1-Click LINE Approval Confirmation Modal */}
       {renderDirectActionResultModal()}
-
-
-      {/* 1-Click Direct Substitute Teaching Ack Modal */}
-      {renderSubstituteAckModal()}
 
     </div>
   );

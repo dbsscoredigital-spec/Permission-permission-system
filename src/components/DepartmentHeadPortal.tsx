@@ -213,14 +213,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
   const [headVehiclePlate, setHeadVehiclePlate] = useState('');
   const [headCompanions, setHeadCompanions] = useState('');
   const [headNotes, setHeadNotes] = useState('');
-  const [headHasClasses, setHeadHasClasses] = useState(false);
-  const [headSubTeacherId, setHeadSubTeacherId] = useState('');
-  const [headSubSubject, setHeadSubSubject] = useState('');
-  const [headSubTasks, setHeadSubTasks] = useState('');
   const [showCreateFormModal, setShowCreateFormModal] = useState(false);
-
-  // Candidate substitute teachers (teachers in the same college)
-  const candidateSubstituteTeachers = users.filter(u => u.id !== currentUser.id && (u.role === 'teacher' || u.role === 'approver'));
 
   const handleApproveAction = (reqId: string) => {
     onApprove(reqId);
@@ -254,13 +247,12 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
     setHeadExitDate(today);
     setHeadExitTime('13:30');
     setHeadReturnTime('16:30');
-    setHeadDestination('สถาบันพัฒนาฝีมือแรงงาน ภาค 1 สมุทรปราการ');
+    setHeadDestination('สถาบันพัฒนาฝีมือแรงงาน ภาค 11 สุราษฎร์ธานี');
     setHeadReason('เข้าร่วมประชุมคณะกรรมการจัดสอบมาตรฐานวิชาชีพฝีมือแรงงานแห่งชาติ สาขาวิชา' + currentUser.branchName);
     setHeadTravelMethod('ตามภารกิจราชการ');
     setHeadVehiclePlate('');
     setHeadCompanions('');
     setHeadNotes('เข้าร่วมประชุมภายนอกวิทยาลัย');
-    setHeadHasClasses(false);
   };
 
   const handleHeadSubmit = (e: React.FormEvent) => {
@@ -269,13 +261,6 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
       alert('กรุณากรอกสถานที่และเหตุผลการขออนุญาต');
       return;
     }
-
-    if (headHasClasses && !headSubTeacherId) {
-      alert('กรุณาเลือกครูผู้สอนแทนเนื่องจากท่านระบุว่ามีคาบสอน');
-      return;
-    }
-
-    const selectedSub = candidateSubstituteTeachers.find(t => t.id === headSubTeacherId);
 
     const payload = {
       userId: currentUser.id,
@@ -293,12 +278,8 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
       vehiclePlate: headVehiclePlate,
       companions: headCompanions,
       notes: headNotes || 'คำขอออกนอกสถานศึกษาของหัวหน้าสาขา',
-      hasClasses: headHasClasses,
-      substituteTeacherId: headHasClasses ? headSubTeacherId : undefined,
-      substituteTeacherName: headHasClasses && selectedSub ? selectedSub.name : undefined,
-      substituteSubject: headHasClasses ? headSubSubject : undefined,
-      substituteTasks: headHasClasses ? headSubTasks : undefined,
-      substituteStatus: headHasClasses ? ('pending' as const) : ('not_required' as const)
+      hasClasses: false,
+      substituteStatus: 'not_required' as const
     };
 
     onSubmitRequest(payload);
@@ -319,7 +300,6 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
     setHeadDestination('');
     setHeadReason('');
     setHeadNotes('');
-    setHeadHasClasses(false);
   };
 
   return (
@@ -596,43 +576,6 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                       </div>
 
                       {/* Teaching Duties Status */}
-                      <div className="pt-1.5 border-t border-amber-200/80">
-                        {req.hasClasses ? (
-                          <div className="bg-amber-100/70 p-2 rounded-lg text-amber-950 space-y-0.5">
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <span>📚 คาบสอน: {req.substituteSubject}</span>
-                              {req.substituteStatus === 'acknowledged' && (
-                                <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded font-bold text-[10px]">
-                                  ✓ ครูสอนแทนรับทราบแล้ว
-                                </span>
-                              )}
-                              {req.substituteStatus === 'pending' && (
-                                <span className="text-amber-800 bg-amber-200 px-1.5 py-0.2 rounded font-bold text-[10px] animate-pulse">
-                                  ⏳ รอครูสอนแทนกดรับทราบ
-                                </span>
-                              )}
-                              {req.substituteStatus === 'declined' && (
-                                <span className="text-rose-700 bg-rose-100 px-1.5 py-0.2 rounded font-bold text-[10px]">
-                                  ✕ ครูสอนแทนไม่สะดวก
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-700">
-                              ครูผู้สอนแทน: <strong>{req.substituteTeacherName}</strong>
-                            </div>
-                            {req.substituteTasks && (
-                              <div className="text-[10px] text-slate-500">
-                                งานที่มอบหมาย: {req.substituteTasks}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-emerald-700 font-medium">
-                            ✓ ไม่มีภาระคาบสอนในช่วงเวลาดังกล่าว
-                          </div>
-                        )}
-                      </div>
-
                       {req.travelMethod && req.travelMethod !== 'ตามภารกิจราชการ' && (
                         <div className="flex items-center gap-2 text-slate-600">
                           <Car className="w-4 h-4 text-slate-400 shrink-0" />
@@ -674,39 +617,13 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                         <span>❌ ไม่อนุมัติ</span>
                       </button>
 
-                      {req.hasClasses && req.substituteStatus === 'pending' ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-100/90 text-amber-900 border border-amber-300"
-                            title="รอครูผู้สอนแทนกดรับทราบ"
-                          >
-                            <Clock className="w-3.5 h-3.5 text-amber-700 animate-spin" />
-                            <span>รอสอนแทน</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (onAcknowledgeSubstitute) {
-                                await onAcknowledgeSubstitute(req.id);
-                              }
-                              handleApproveAction(req.id);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-500/30 transition-all cursor-pointer"
-                            title="อนุมัติคำขอทันที (ระบบจะบันทึกรับทราบภาระงานสอนแทนให้โดยอัตโนมัติ)"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>✅ อนุมัติ (รับทราบแทน)</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleApproveAction(req.id)}
-                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-500/30 transition-all cursor-pointer"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          <span>✅ อนุมัติ</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleApproveAction(req.id)}
+                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-500/30 transition-all cursor-pointer"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>✅ อนุมัติ</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1162,17 +1079,10 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                     {req.status === 'pending' && (
                       <div className="flex items-center gap-2">
-                        {req.hasClasses && req.substituteStatus === 'pending' ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>รอครูผู้สอนแทน ({req.substituteTeacherName || 'ครูสอนแทน'}) กดรับทราบ</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200">
-                            <Clock className="w-3.5 h-3.5 text-blue-600" />
-                            <span>รอ{req.assignedApproverName || 'ผู้บริหาร'}พิจารณาอนุมัติ</span>
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200">
+                          <Clock className="w-3.5 h-3.5 text-blue-600" />
+                          <span>รอ{req.assignedApproverName || 'ผู้บริหาร'}พิจารณาอนุมัติ</span>
+                        </span>
                       </div>
                     )}
 
@@ -1306,63 +1216,7 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 />
               </div>
 
-              {/* Teaching Duties Option */}
-              <div className="pt-2 border-t border-slate-200">
-                <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={headHasClasses}
-                    onChange={(e) => setHeadHasClasses(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600"
-                  />
-                  <span>มีภาระคาบสอนในช่วงเวลาดังกล่าว (ต้องมอบหมายครูสอนแทน)</span>
-                </label>
 
-                {headHasClasses && (
-                  <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">
-                        เลือกครูผู้สอนแทน <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        value={headSubTeacherId}
-                        onChange={(e) => setHeadSubTeacherId(e.target.value)}
-                        required={headHasClasses}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs"
-                      >
-                        <option value="">-- เลือกครูในสถานศึกษา --</option>
-                        {candidateSubstituteTeachers.map((u, idx) => (
-                          <option key={`head-sub-${u.id}-${idx}`} value={u.id}>
-                            {u.name} ({u.position} - {u.branchName})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">วิชา/ชั้นเรียนที่สอนแทน</label>
-                      <input
-                        type="text"
-                        value={headSubSubject}
-                        onChange={(e) => setHeadSubSubject(e.target.value)}
-                        placeholder="เช่น วิชาเทคโนโลยียานยนต์ ปวส.1 ห้อง 2"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">งานหรือใบงานที่มอบหมาย</label>
-                      <input
-                        type="text"
-                        value={headSubTasks}
-                        onChange={(e) => setHeadSubTasks(e.target.value)}
-                        placeholder="เช่น มอบหมายใบงานบทที่ 3 ให้นักศึกษาทำส่ง"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">หมายเหตุเพิ่มเติม</label>
@@ -1446,48 +1300,10 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 <p className="text-slate-800 mt-0.5 leading-relaxed">{selectedReq.reason}</p>
               </div>
 
-              {/* Substitute Teaching Details */}
-              <div className="bg-amber-100/70 p-3 rounded-xl border border-amber-200">
-                <span className="text-amber-900 font-bold block mb-1">
-                  📚 ภาระงานสอนและการสอนแทน:
-                </span>
-                {selectedReq.hasClasses ? (
-                  <div className="space-y-1 text-slate-800">
-                    <div>วิชาที่ขอให้สอนแทน: <strong>{selectedReq.substituteSubject}</strong></div>
-                    <div>ครูผู้สอนแทน: <strong>{selectedReq.substituteTeacherName}</strong></div>
-                    {selectedReq.substituteTasks && (
-                      <div className="text-slate-600 text-[11px]">งานที่มอบหมาย: {selectedReq.substituteTasks}</div>
-                    )}
-                    <div className="pt-1 flex items-center gap-1 font-semibold text-[11px]">
-                      สถานะการรับทราบของครูสอนแทน:
-                      {selectedReq.substituteStatus === 'acknowledged' && (
-                        <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-bold">
-                          ✓ รับทราบแล้ว ({selectedReq.substituteAcknowledgedAt || ''})
-                        </span>
-                      )}
-                      {selectedReq.substituteStatus === 'pending' && (
-                        <span className="text-amber-800 bg-amber-200 px-2 py-0.5 rounded font-bold">
-                          ⏳ รอครูสอนแทนกดรับทราบ
-                        </span>
-                      )}
-                      {selectedReq.substituteStatus === 'declined' && (
-                        <span className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-bold">
-                          ✕ ครูสอนแทนแจ้งไม่สะดวก ({selectedReq.substituteDeclineReason || ''})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <span className="text-emerald-700 font-medium">
-                    ✓ ผู้ขอยืนยันไม่มีคาบสอนในช่วงเวลาดังกล่าว
-                  </span>
-                )}
-              </div>
-
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
                 <div>
                   <span className="text-slate-400 block">เบอร์ติดต่อ:</span>
-                  <span className="text-slate-800">{selectedReq.userPhone}</span>
+                  <span className="text-slate-800">{selectedReq.userPhone || '-'}</span>
                 </div>
                 {selectedReq.travelMethod && selectedReq.travelMethod !== 'ตามภารกิจราชการ' && (
                   <div>
@@ -1510,40 +1326,13 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
                 >
                   ❌ ไม่อนุมัติ
                 </button>
-                {selectedReq.hasClasses && selectedReq.substituteStatus === 'pending' ? (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className="px-3 py-2 rounded-xl text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5"
-                      title="รอให้ครูผู้สอนแทนกดรับทราบ"
-                    >
-                      <Clock className="w-3.5 h-3.5 text-amber-700 animate-spin" />
-                      <span>รอสอนแทน</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (onAcknowledgeSubstitute) {
-                          await onAcknowledgeSubstitute(selectedReq.id);
-                        }
-                        handleApproveAction(selectedReq.id);
-                        setSelectedReq(null);
-                      }}
-                      className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/25 cursor-pointer flex items-center gap-1.5"
-                      title="อนุมัติคำขอทันที (ระบบจะบันทึกรับทราบภาระงานสอนแทนให้โดยอัตโนมัติ)"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>✅ อนุมัติ (รับทราบแทน)</span>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleApproveAction(selectedReq.id)}
-                    className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/25 cursor-pointer"
-                  >
-                    ✅ อนุมัติคำขอ
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleApproveAction(selectedReq.id)}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/25 cursor-pointer"
+                >
+                  ✅ อนุมัติคำขอ
+                </button>
               </div>
             ) : (
               <div className="text-center text-xs text-slate-500">

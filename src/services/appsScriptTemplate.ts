@@ -763,15 +763,11 @@ function handleCreateRequest(req) {
     req.userName,
     "submit",
     new Date(),
-    req.hasClasses ? ("ยื่นคำขอใหม่ มีภาระงานสอน รอครูสอนแทน (" + (req.substituteTeacherName || "") + ") รับทราบ") : ("ยื่นคำขอใหม่ ส่งตรงไปยัง " + req.assignedApproverName)
+    "ยื่นคำขอใหม่ ส่งตรงไปยัง " + req.assignedApproverName
   ]);
 
-  // ส่งแจ้งเตือน LINE ไปยังหัวหน้าสาขา
-  // เงื่อนไข: หากมีคาบสอน (hasClasses) และครูผู้สอนแทนยังไม่ได้รับทราบ ให้รอครูสอนแทนกดรับทราบในเว็บก่อน ค่อยส่ง LINE ให้หัวหน้าสาขา
-  const hasPendingSubstitute = Boolean(req && req.hasClasses && req.substituteStatus !== "acknowledged");
-  if (!hasPendingSubstitute) {
-    sendLineFlexMessageToApprover(req);
-  }
+  // ส่งแจ้งเตือน LINE Flex Message ตรงไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
+  sendLineFlexMessageToApprover(req);
 
   return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: req.id }))
     .setMimeType(ContentService.MimeType.JSON);
@@ -993,21 +989,7 @@ function sendLineFlexMessageToApprover(req, isForce) {
             { type: "text", text: "📅 วันที่: " + req.exitDate, size: "sm" },
             { type: "text", text: "🕐 เวลา: " + req.exitTime + "–" + req.returnTime + " น.", size: "sm" },
             { type: "text", text: "📍 สถานที่: " + req.destination, size: "sm", wrap: true },
-            { type: "text", text: "📝 เหตุผล: " + req.reason, size: "sm", wrap: true },
-            req.hasClasses ? {
-              type: "box",
-              layout: "vertical",
-              backgroundColor: "#fef3c7",
-              cornerRadius: "md",
-              paddingAll: "8px",
-              spacing: "xs",
-              contents: [
-                { type: "text", text: "📚 ข้อมูลภาระงานสอนแทน:", weight: "bold", size: "xs", color: "#92400e" },
-                { type: "text", text: "• รายวิชา: " + (req.substituteSubject || "ภาระงานประจำวัน"), size: "xs", color: "#78350f", wrap: true },
-                { type: "text", text: "• งานที่มอบหมาย: " + (req.substituteTasks || "ตามที่ได้ประสานงานมอบหมาย"), size: "xs", color: "#78350f", wrap: true },
-                { type: "text", text: "• ครูผู้สอนแทน: " + (req.substituteTeacherName || "ระบุครูสอนแทน") + " (✅ รับทราบในระบบแล้ว)", size: "xs", weight: "bold", color: "#065f46", wrap: true }
-              ]
-            } : { type: "text", text: "✓ ไม่มีคาบสอนในช่วงเวลาดังกล่าว", size: "xs", color: "#059669" }
+            { type: "text", text: "📝 เหตุผล: " + req.reason, size: "sm", wrap: true }
           ]
         },
         footer: {

@@ -159,9 +159,9 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
           </p>` : ''}
         </div>
 
-        <!-- Signatures Grid -->
+        <!-- Signatures Grid (2 Columns: Requester and Approver) -->
         <div style="display: table; width: 100%; margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; font-size: 12pt;">
-          <div style="display: table-cell; width: 33.33%; text-align: center; vertical-align: top; padding: 0 4px;">
+          <div style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 12px;">
             <p style="margin: 0 0 5px 0;">
               ลงชื่อ ${isApproved 
                 ? `<span style="font-weight: 700; color: #000; border-bottom: 1px solid #000; padding: 0 6px 1px 6px;">${request.userName}</span>` 
@@ -172,25 +172,7 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
             <p style="margin: 2px 0 0 0; color: #6b7280; font-size: 11pt;">วันที่ ${request.exitDate}</p>
           </div>
 
-          <div style="display: table-cell; width: 33.33%; text-align: center; vertical-align: top; padding: 0 4px;">
-            ${request.hasClasses ? `
-              <div style="font-size: 10pt; color: #047857; font-weight: bold; margin-bottom: 4px;">
-                ${request.substituteStatus === 'acknowledged' ? '[ ✓ ] รับทราบการสอนแทนแล้ว' : '[ ⏳ ] รอรับทราบในระบบ'}
-              </div>
-              <p style="margin: 0 0 5px 0;">
-                ลงชื่อ ${request.substituteStatus === 'acknowledged'
-                  ? `<span style="font-weight: 700; color: #000; border-bottom: 1px solid #000; padding: 0 6px 1px 6px;">${subName}</span>`
-                  : '......................................................'}
-              </p>
-              <p style="margin: 0 0 2px 0; font-weight: bold; color: #000;">(${subName})</p>
-              <p style="margin: 0; color: #6b7280;">ครูผู้ปฏิบัติการสอนแทน</p>
-              <p style="margin: 2px 0 0 0; color: #6b7280; font-size: 10pt;">${request.substituteAcknowledgedAt || ''}</p>
-            ` : `
-              <div style="padding-top: 22px; color: #9ca3af; font-size: 11pt;">(ไม่มีภาระคาบสอนแทน)</div>
-            `}
-          </div>
-
-          <div style="display: table-cell; width: 33.33%; text-align: center; vertical-align: top; padding: 0 4px;">
+          <div style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 12px;">
             <div style="font-size: 10pt; color: #047857; font-weight: bold; margin-bottom: 4px;">
               [ ✓ ] อนุมัติผ่านระบบอิเล็กทรอนิกส์
             </div>
@@ -467,10 +449,10 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
             )}
           </div>
 
-          {/* Signatures & Approvals Section */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 pt-4 border-t border-slate-300 text-xs">
+          {/* Signatures & Approvals Section (2 Columns: Requester and Approver) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8 pt-4 border-t border-slate-300 text-xs">
             {/* 1. Teacher Sign */}
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-1 bg-slate-50/50 p-3 rounded-2xl border border-slate-200">
               <p>
                 ลงชื่อ {isApproved ? (
                   <span className="font-bold text-slate-900 border-b border-slate-900 px-2 pb-0.5">
@@ -480,40 +462,13 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
                   '......................................................'
                 )}
               </p>
-              <p className="font-semibold">({request.userName})</p>
+              <p className="font-semibold text-slate-900">({request.userName})</p>
               <p className="text-slate-500">ผู้ขออนุญาต</p>
               <p className="text-slate-500 text-[11px]">วันที่ {request.exitDate}</p>
             </div>
 
-            {/* 2. Substitute Teacher Sign (if applicable) */}
-            <div className="text-center space-y-1 bg-slate-50/50 p-2 rounded-xl border border-slate-200">
-              {request.hasClasses ? (
-                <>
-                  <div className="text-[10px] text-emerald-700 font-bold mb-0.5">
-                    {request.substituteStatus === 'acknowledged' ? '[ ✓ ] รับทราบการสอนแทนแล้ว' : '[ ⏳ ] รอรับทราบในระบบ'}
-                  </div>
-                  <p>
-                    ลงชื่อ {request.substituteStatus === 'acknowledged' ? (
-                      <span className="font-bold text-slate-900 border-b border-slate-900 px-2 pb-0.5">
-                        {subName}
-                      </span>
-                    ) : (
-                      '......................................................'
-                    )}
-                  </p>
-                  <p className="font-semibold">({subName})</p>
-                  <p className="text-slate-500">ครูผู้ปฏิบัติการสอนแทน</p>
-                  <p className="text-slate-500 text-[10px]">{request.substituteAcknowledgedAt || ''}</p>
-                </>
-              ) : (
-                <div className="py-4 text-slate-400 text-[11px]">
-                  (ไม่มีภาระคาบสอนแทน)
-                </div>
-              )}
-            </div>
-
-            {/* 3. Approver Sign */}
-            <div className="text-center space-y-1 bg-slate-50/70 p-2 rounded-xl border border-slate-200">
+            {/* 2. Approver Sign */}
+            <div className="text-center space-y-1 bg-slate-50/70 p-3 rounded-2xl border border-slate-200">
               <div className="text-[10px] text-emerald-700 font-bold mb-0.5">
                 [ ✓ ] อนุมัติผ่านระบบอิเล็กทรอนิกส์
               </div>
@@ -526,7 +481,7 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({ request, onClose
                   '......................................................'
                 )}
               </p>
-              <p className="font-semibold">({approverName})</p>
+              <p className="font-semibold text-slate-900">({approverName})</p>
               <p className="text-slate-500">หัวหน้าสาขาวิชา{request.branchName}</p>
               <p className="text-slate-500 text-[10px]">{request.approvedAt || 'อนุมัติแล้ว'}</p>
             </div>

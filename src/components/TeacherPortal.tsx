@@ -39,8 +39,8 @@ interface TeacherPortalProps {
   onViewQrPass: (req: ExitRequest) => void;
   onPrintSlip: (req: ExitRequest) => void;
   onOpenLineModal?: () => void;
-  onAcknowledgeSubstitute: (requestId: string) => void;
-  onDeclineSubstitute: (requestId: string, reason: string) => void;
+  onAcknowledgeSubstitute?: (requestId: string) => void;
+  onDeclineSubstitute?: (requestId: string, reason: string) => void;
   onApprove?: (requestId: string) => void;
 }
 
@@ -52,29 +52,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   onSubmitRequest,
   onViewQrPass,
   onPrintSlip,
-  onAcknowledgeSubstitute,
-  onDeclineSubstitute,
   onApprove
 }) => {
-  // Active Tab in Teacher Portal: 'create' | 'my-requests' | 'substitute-tasks'
-  const urlReqId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('reqId') : null;
-  const urlAction = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('action') : null;
-  const urlSubtab = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('subtab') : null;
-
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'my-requests' | 'substitute-tasks'>(() => {
-    if (urlAction === 'substitute_ack' || urlAction === 'sub_ack' || urlAction === 'substitute' || urlSubtab === 'substitute-tasks') {
-      return 'substitute-tasks';
-    }
-    return 'create';
-  });
+  // Active Tab in Teacher Portal: 'create' | 'my-requests'
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'my-requests'>('create');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-
-  // If URL changes with substitute params, auto-switch to substitute-tasks tab
-  useEffect(() => {
-    if (urlAction === 'substitute_ack' || urlAction === 'sub_ack' || urlAction === 'substitute' || urlSubtab === 'substitute-tasks') {
-      setActiveSubTab('substitute-tasks');
-    }
-  }, [urlAction, urlSubtab]);
 
   // Form State
   const today = new Date().toISOString().slice(0, 10);
@@ -84,21 +66,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [destination, setDestination] = useState('');
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  
-  // Substitute Teaching Duties state
-  const [hasClasses, setHasClasses] = useState<boolean>(false);
-  const [substituteTeacherId, setSubstituteTeacherId] = useState<string>('');
-  const [substituteSubject, setSubstituteSubject] = useState<string>('');
-  const [substituteTasks, setSubstituteTasks] = useState<string>('');
-
-  // Decline Dialog for Substitute
-  const [decliningReqId, setDecliningReqId] = useState<string | null>(null);
-  const [declineReason, setDeclineReason] = useState<string>('');
-  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
-  const [substituteScope, setSubstituteScope] = useState<'me' | 'all'>('me');
-
-  // List of other teachers available for substitute teaching
-  const candidateSubstituteTeachers = users.filter(u => u.id !== currentUser.id && (u.role === 'teacher' || u.role === 'approver'));
 
   // Automatically determine the approver based on role and branch
   const currentBranch = branches.find(b => b.id === currentUser.branchId || b.name === currentUser.branchName);
@@ -160,42 +127,19 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const allPendingSubstituteInCollege = allSubstituteRequestsInCollege.filter(r => r.substituteStatus === 'pending');
 
   // Substitute requests assigned to current user (or all if scope is 'all' or user is admin, or matching URL reqId)
-  const substituteRequestsForMe = requests.filter(r => {
-    const hasClassFlag = r.hasClasses === true || String(r.hasClasses).toLowerCase() === 'true' || Boolean(r.substituteTeacherName);
-    if (!hasClassFlag) return false;
-    if (urlReqId && r.id && r.id.toLowerCase() === urlReqId.toLowerCase()) return true;
-    if (substituteScope === 'all' || currentUser.role === 'admin') return true;
-    if (r.substituteTeacherId && r.substituteTeacherId === currentUser.id) return true;
-    if (r.substituteTeacherName && norm(r.substituteTeacherName) === norm(currentUser.name)) return true;
-    if (r.substituteTeacherName && cleanThaiName(r.substituteTeacherName) === cleanThaiName(currentUser.name)) return true;
-    const cleanSub = cleanThaiName(r.substituteTeacherName);
-    const cleanMe = cleanThaiName(currentUser.name);
-    if (cleanSub && cleanMe && (cleanSub.includes(cleanMe) || cleanMe.includes(cleanSub))) return true;
-    return false;
-  });
-  const pendingSubstituteForMe = substituteRequestsForMe.filter(r => r.substituteStatus === 'pending');
-
   const filteredList = displayRequests.filter(r => {
     if (filterStatus === 'all') return true;
     return r.status === filterStatus;
   });
 
-  // Fast fill prompt's exact example with Substitute Teacher
+  // Fast fill prompt's exact example
   const handleFillSomchaiExample = () => {
     setExitDate('2026-10-05');
     setExitTime('10:30');
     setReturnTime('12:00');
-    setDestination('ศูนย์บริการรถยนต์ มิตซูบิชิ ปทุมวัน');
+    setDestination('ศูนย์บริการรถยนต์ มิตซูบิชิ สุราษฎร์ธานี');
     setReason('นำรถยนต์ราชการส่วนกลางเข้าตรวจเช็กระยะ 20,000 กม.');
-    setHasClasses(true);
-    // Find teacher Prasert or first candidate
-    const subTeacher = candidateSubstituteTeachers.find(t => t.id === 'usr-teacher-prasert') || candidateSubstituteTeachers[0];
-    if (subTeacher) {
-      setSubstituteTeacherId(subTeacher.id);
-    }
-    setSubstituteSubject('วิชาเครื่องยนต์ดีเซล ระดับ ปวช.2 (คาบ 3-4 ห้องปฏิบัติการช่างยนต์ 2)');
-    setSubstituteTasks('มอบหมายใบงานที่ 4 การตรวจเช็กระบบหล่อลื่นและไส้กรองน้ำมันเครื่อง ให้นักเรียนทำในสมุดส่งท้ายคาบ');
-    setNotes('ได้โทรศัพท์นัดหมายและประสานงานกับครูผู้สอนแทนล่วงหน้าเรียบร้อยแล้ว');
+    setNotes('ได้นัดหมายกับศูนย์บริการไว้ล่วงหน้าเรียบร้อยแล้ว');
   };
 
   // Fast fill example for department head
@@ -203,12 +147,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     setExitDate('2026-10-05');
     setExitTime('13:30');
     setReturnTime('16:30');
-    setDestination('สถาบันพัฒนาฝีมือแรงงาน ภาค 1 สมุทรปราการ');
+    setDestination('สถาบันพัฒนาฝีมือแรงงาน ภาค 11 สุราษฎร์ธานี');
     setReason(`เข้าร่วมประชุมคณะกรรมการจัดสอบมาตรฐานวิชาชีพฝีมือแรงงานแห่งชาติ สาขาวิชา${currentUser.branchName}`);
-    setHasClasses(false);
-    setSubstituteTeacherId('');
-    setSubstituteSubject('');
-    setSubstituteTasks('');
     setNotes('เข้าร่วมประชุมตามหนังสือราชการ');
   };
 
@@ -218,13 +158,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       alert('กรุณากรอกสถานที่และเหตุผลการขออนุญาต');
       return;
     }
-
-    if (hasClasses && !substituteTeacherId) {
-      alert('กรุณาเลือกครูผู้สอนแทนเนื่องจากท่านระบุว่ามีคาบสอน');
-      return;
-    }
-
-    const selectedSubTeacher = candidateSubstituteTeachers.find(t => t.id === substituteTeacherId);
 
     const payload = {
       userId: currentUser.id,
@@ -244,12 +177,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       vehiclePlate: '',
       companions: '',
       notes: notes || '',
-      hasClasses,
-      substituteTeacherId: hasClasses ? substituteTeacherId : undefined,
-      substituteTeacherName: hasClasses && selectedSubTeacher ? selectedSubTeacher.name : undefined,
-      substituteSubject: hasClasses ? substituteSubject : undefined,
-      substituteTasks: hasClasses ? substituteTasks : undefined,
-      substituteStatus: hasClasses ? ('pending' as const) : ('not_required' as const)
+      hasClasses: false,
+      substituteStatus: 'not_required' as const
     };
 
     onSubmitRequest(payload);
@@ -268,27 +197,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     setDestination('');
     setReason('');
     setNotes('');
-    setHasClasses(false);
-    setSubstituteTeacherId('');
-    setSubstituteSubject('');
-    setSubstituteTasks('');
 
     // Switch to My Requests tab to see new request
     setTimeout(() => {
       setActiveSubTab('my-requests');
     }, 1500);
-  };
-
-  const handleConfirmDecline = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!decliningReqId) return;
-    if (!declineReason.trim()) {
-      alert('กรุณากรอกเหตุผลที่ไม่สะดวกสอนแทน');
-      return;
-    }
-    onDeclineSubstitute(decliningReqId, declineReason.trim());
-    setDecliningReqId(null);
-    setDeclineReason('');
   };
 
   return (
@@ -328,10 +241,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
 
       {/* Main Tab Controller (Mobile-First Segmented Control) */}
       <div className="space-y-2">
-        <div className="grid grid-cols-3 p-1 bg-slate-200/80 rounded-2xl gap-1">
+        <div className="grid grid-cols-2 p-1 bg-slate-200/80 rounded-2xl gap-1">
           <button
             onClick={() => setActiveSubTab('create')}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSubTab === 'create'
                 ? 'bg-white text-blue-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -339,14 +252,14 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           >
             <FileText className="w-4 h-4 shrink-0" />
             <span className="truncate">
-              <span className="inline sm:hidden">ยื่นขอออก</span>
-              <span className="hidden sm:inline">แบบฟอร์มขอออกนอก</span>
+              <span className="inline sm:hidden">ยื่นขอออกนอก</span>
+              <span className="hidden sm:inline">แบบฟอร์มขอออกนอกสถานศึกษา</span>
             </span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('my-requests')}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSubTab === 'my-requests'
                 ? 'bg-white text-blue-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -355,26 +268,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             <Clock className="w-4 h-4 shrink-0" />
             <span className="truncate">
               <span className="inline sm:hidden">คำขอฉัน ({userRequests.length})</span>
-              <span className="hidden sm:inline">ประวัติ & คำขอ ({userRequests.length})</span>
+              <span className="hidden sm:inline">ประวัติ & คำขอของฉัน ({userRequests.length})</span>
             </span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('substitute-tasks')}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer relative ${
-              activeSubTab === 'substitute-tasks'
-                ? 'bg-white text-blue-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Handshake className="w-4 h-4 shrink-0" />
-            <span className="truncate">
-              <span className="inline sm:hidden">สอนแทน ({substituteRequestsForMe.length})</span>
-              <span className="hidden sm:inline">ภาระงานสอนแทน ({substituteRequestsForMe.length})</span>
-            </span>
-            {pendingSubstituteForMe.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-2 animate-ping"></span>
-            )}
           </button>
         </div>
 
@@ -413,53 +308,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Prominent Pending Substitute Alert Banner (Visible across portal) */}
-      {pendingSubstituteForMe.length > 0 && (
-        <div className="bg-linear-to-r from-amber-500 via-amber-600 to-orange-600 text-white p-4 sm:p-5 rounded-2xl shadow-lg border border-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-start sm:items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
-              <Handshake className="w-6 h-6 text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/20 text-[11px] font-bold">
-                <span>🔔 มีคำขอสอนแทนรอท่านรับทราบ ({pendingSubstituteForMe.length} รายการ)</span>
-              </div>
-              <h4 className="text-sm sm:text-base font-bold mt-1">
-                ครู{pendingSubstituteForMe[0].userName} ขอความอนุเคราะห์สอนแทน: {pendingSubstituteForMe[0].substituteSubject || 'ภาระงานสอนประจำวัน'}
-              </h4>
-              <p className="text-xs text-amber-100 mt-0.5">
-                💡 ครูผู้สอนแทนกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex แจ้งเตือนให้หัวหน้าสาขาพิจารณาอนุมัติทันที
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              disabled={acknowledgingId === pendingSubstituteForMe[0].id}
-              onClick={async () => {
-                setAcknowledgingId(pendingSubstituteForMe[0].id);
-                try {
-                  await onAcknowledgeSubstitute(pendingSubstituteForMe[0].id);
-                } finally {
-                  setAcknowledgingId(null);
-                }
-              }}
-              className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-emerald-50 text-emerald-800 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 disabled:opacity-50"
-            >
-              <CheckSquare className="w-4 h-4 text-emerald-600" />
-              <span>{acknowledgingId === pendingSubstituteForMe[0].id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบทันที'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('substitute-tasks')}
-              className="px-3 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <span>ดูรายการทั้งหมด ({pendingSubstituteForMe.length})</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Subtab 1: Form View */}
       {activeSubTab === 'create' && (
@@ -514,9 +362,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                     <span>ยื่นคำขออนุญาตออกนอกบริเวณสถานศึกษา</span>
                   </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
-                    {hasClasses
-                      ? 'มีภาระงานสอน: ระบบจะรอให้ครูผู้สอนแทนกดรับทราบก่อน จึงส่งเรื่องให้หัวหน้าสาขาพิจารณาอนุมัติ'
-                      : 'ไม่มีภาระงานสอน: ระบบจะส่งคำขอไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที'}
+                    ระบบจะส่งคำขอไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -641,119 +487,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                     />
                   </div>
 
-                  {/* 3. การปฏิบัติการสอน & มอบหมายครูสอนแทน */}
-                  <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <BookOpen className="w-4 h-4 text-amber-600" />
-                        <span>ภาระการสอน & การมอบหมายครูสอนแทน</span>
-                      </h4>
-                      {hasClasses && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
-                          มีคาบสอนในเวลาที่ขอออก
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold text-slate-800">
-                        ท่านมีภาระคาบสอนในช่วงเวลาที่ขออนุญาตออกนอกสถานศึกษาหรือไม่? <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                          !hasClasses 
-                            ? 'bg-white border-emerald-500 shadow-xs ring-1 ring-emerald-400 font-semibold text-slate-900' 
-                            : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-white'
-                        }`}>
-                          <input
-                            type="radio"
-                            name="hasClasses"
-                            checked={!hasClasses}
-                            onChange={() => setHasClasses(false)}
-                            className="text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span>🟢 ไม่มีคาบสอนในช่วงเวลาดังกล่าว</span>
-                        </label>
-
-                        <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                          hasClasses 
-                            ? 'bg-amber-100/90 border-amber-500 shadow-xs ring-1 ring-amber-400 font-semibold text-amber-950' 
-                            : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-white'
-                        }`}>
-                          <input
-                            type="radio"
-                            name="hasClasses"
-                            checked={hasClasses}
-                            onChange={() => setHasClasses(true)}
-                            className="text-amber-600 focus:ring-amber-500"
-                          />
-                          <span>🟡 มีคาบสอน (ส่งให้ครูสอนแทนกดรับทราบ)</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* If Has Classes: Show Assignment Fields */}
-                    {hasClasses && (
-                      <div className="pt-3 border-t border-amber-200 space-y-3 animate-in fade-in">
-                        <div className="bg-emerald-50/90 p-3 rounded-xl border border-emerald-300 text-xs text-emerald-950 flex items-start gap-2 shadow-2xs">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="block text-emerald-900">💡 นโยบายประหยัดโควต้า LINE (แพ็กเกจฟรี 300 ข้อความ/เดือน):</strong>
-                            <span>ครูผู้สอนแทนจะเข้ามากดรับทราบผ่านระบบเว็บนี้ (ไม่ส่งข้อความ LINE เพื่อประหยัดโควต้า) เมื่อครูสอนแทนกดรับทราบแล้ว ระบบจะส่ง LINE ข้อความที่ 1/2 ไปยังหัวหน้าสาขาโดยอัตโนมัติ</span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-800 mb-1">
-                              เลือกครูผู้สอนแทน <span className="text-rose-500">*</span>
-                            </label>
-                            <select
-                              value={substituteTeacherId}
-                              onChange={(e) => setSubstituteTeacherId(e.target.value)}
-                              required={hasClasses}
-                              className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-hidden font-medium"
-                            >
-                              <option value="">-- เลือกครูผู้ปฏิบัติการสอนแทน --</option>
-                              {candidateSubstituteTeachers.map((t, idx) => (
-                                <option key={`sub-teacher-${t.id}-${idx}`} value={t.id}>
-                                  {t.name} ({t.position} • {t.branchName})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-800 mb-1">
-                              รายวิชา / คาบสอน / ระดับชั้น <span className="text-rose-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={substituteSubject}
-                              onChange={(e) => setSubstituteSubject(e.target.value)}
-                              placeholder="เช่น วิชาเครื่องยนต์ดีเซล ปวช.2 คาบ 3-4"
-                              required={hasClasses}
-                              className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-800 mb-1">
-                            ภาระงาน / ใบงานที่มอบหมายให้นักศึกษาปฏิบัติ
-                          </label>
-                          <textarea
-                            value={substituteTasks}
-                            onChange={(e) => setSubstituteTasks(e.target.value)}
-                            rows={2}
-                            placeholder="เช่น ให้นักศึกษาทำใบงานบทที่ 4 ในห้องปฏิบัติการ พร้อมเช็กชื่อและส่งงานท้ายคาบ..."
-                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-hidden resize-none"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       หมายเหตุเพิ่มเติม / ภาระงานอื่น
@@ -762,7 +495,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       type="text"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="เช่น ไม่มีภาระคาบสอนในเวลาดังกล่าว ได้มอบหมายงานไว้แล้ว"
+                      placeholder="เช่น ได้ประสานงานมอบหมายภาระงานไว้เรียบร้อยแล้ว"
                       className="w-full px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     />
                   </div>
@@ -771,11 +504,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                 {/* Submit Action */}
                 <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
-                      {hasClasses
-                        ? 'มีคาบสอน: ต้องรอครูผู้สอนแทนกดรับทราบก่อน จึงจะแจ้งเตือนหัวหน้าสาขาเพื่อพิจารณาอนุมัติ'
-                        : `ไม่มีคาบสอน: ส่งคำขอตรงไปยังหัวหน้าสาขา (${autoApproverName}) เพื่อพิจารณาอนุมัติทันที`}
+                      ส่งคำขอตรงไปยังหัวหน้าสาขา (<strong className="text-slate-800">{autoApproverName}</strong>) เพื่อพิจารณาอนุมัติทันที
                     </span>
                   </div>
 
@@ -970,71 +701,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                           <span>ผู้อนุมัติ: {req.assignedApproverName}</span>
                         </div>
 
-                        {/* Substitute Teaching Status */}
-                        {req.hasClasses && (
-                          <div className="bg-amber-50/90 p-2.5 rounded-xl border border-amber-200 text-xs space-y-1 mt-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-amber-900 flex items-center gap-1">
-                                <BookOpen className="w-3.5 h-3.5 text-amber-700" />
-                                <span>{req.substituteSubject || 'มีคาบสอนแทน'}</span>
-                              </span>
-                              {req.substituteStatus === 'acknowledged' && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                                  <CheckSquare className="w-3 h-3 text-emerald-600" />
-                                  ครูสอนแทนรับทราบแล้ว
-                                </span>
-                              )}
-                              {req.substituteStatus === 'pending' && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-200 px-2 py-0.5 rounded-full animate-pulse">
-                                  <Clock className="w-3 h-3 text-amber-700" />
-                                  รอครูสอนแทนกดรับทราบ
-                                </span>
-                              )}
-                              {req.substituteStatus === 'declined' && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-full">
-                                  <XCircle className="w-3 h-3 text-rose-600" />
-                                  ครูสอนแทนไม่สะดวก
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-slate-700 text-[11px]">
-                              ครูผู้สอนแทน: <strong>{req.substituteTeacherName}</strong>
-                            </div>
-                            {req.substituteTasks && (
-                              <div className="text-slate-500 text-[10px]">
-                                ภาระงาน: {req.substituteTasks}
-                              </div>
-                            )}
-                            {req.substituteStatus === 'pending' && (
-                              <div className="pt-2 space-y-1.5">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {(currentUser.id === req.substituteTeacherId || (currentUser.name && req.substituteTeacherName && (currentUser.name.includes(req.substituteTeacherName) || req.substituteTeacherName.includes(currentUser.name))) || currentUser.role === 'admin') && (
-                                    <button
-                                      type="button"
-                                      disabled={acknowledgingId === req.id}
-                                      onClick={async () => {
-                                        setAcknowledgingId(req.id);
-                                        try {
-                                          await onAcknowledgeSubstitute(req.id);
-                                        } finally {
-                                          setAcknowledgingId(null);
-                                        }
-                                      }}
-                                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer disabled:opacity-50"
-                                    >
-                                      <CheckSquare className="w-3.5 h-3.5" />
-                                      <span>{acknowledgingId === req.id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
-                                    </button>
-                                  )}
-                                </div>
-                                <p className="text-[10px] text-amber-700">
-                                  💡 ครูผู้สอนแทนกดรับทราบในระบบได้ทันที (ไม่ต้องกดผ่าน LINE) เมื่อกดแล้วระบบจะส่ง LINE Flex ให้หัวหน้าสาขาพิจารณาอนุมัติทันที
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
                         {/* Rejection Note if rejected */}
                         {isRejected && req.rejectionReason && (
                           <div className="bg-rose-50 text-rose-700 p-2 rounded-lg border border-rose-200 text-xs">
@@ -1063,7 +729,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       </span>
 
                       <div className="flex items-center gap-2">
-
                         {isApproved && (
                           <>
                             <button
@@ -1090,285 +755,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Subtab 3: Substitute Tasks Assigned to Me */}
-      {activeSubTab === 'substitute-tasks' && (
-        <div className="space-y-4">
-          <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
-                <Handshake className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
-                  <span>รายการภาระงานสอนแทน ({substituteRequestsForMe.length} รายการ)</span>
-                  <span className="text-xs font-normal text-slate-500">
-                    {substituteScope === 'all' ? '(แสดงทั้งหมดในวิทยาลัย)' : `(เฉพาะที่ระบุถึง: ${currentUser.name})`}
-                  </span>
-                </h3>
-                <p className="text-slate-600 mt-0.5">
-                  เมื่อเพื่อนครูมีคาบสอนและขอออกนอกสถานศึกษา ท่านสามารถกดรับทราบในระบบนี้ได้ทันที เมื่อรับทราบแล้วระบบจะส่ง LINE ข้อความที่ 1 ให้หัวหน้าสาขาพิจารณา
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap shrink-0">
-              {/* Scope Switcher Pills */}
-              <div className="inline-flex items-center p-1 bg-white rounded-xl border border-amber-200 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setSubstituteScope('me')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    substituteScope === 'me'
-                      ? 'bg-amber-500 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  👤 มอบหมายถึงฉัน
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSubstituteScope('all')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    substituteScope === 'all'
-                      ? 'bg-amber-500 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  🌐 ทั้งหมดในวิทยาลัย ({allSubstituteRequestsInCollege.length})
-                </button>
-              </div>
-
-              {pendingSubstituteForMe.length > 0 && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold text-xs shadow-xs shrink-0">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>รอรับทราบ {pendingSubstituteForMe.length} รายการ</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* In-system instruction banner */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-              <div>
-                <span className="font-bold text-emerald-900 block">✨ ครูผู้สอนแทนสามารถกดรับทราบในระบบนี้ได้ทันที (ไม่ต้องกดผ่าน LINE):</span>
-                <span className="text-emerald-800 text-[11px]">
-                  เมื่อท่านกดปุ่ม <strong>"✅ กดรับทราบในระบบ"</strong> ระบบจะบันทึกผลทันที และส่งข้อความ LINE Flex Message ไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติต่อไปทันทีครับ
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {substituteRequestsForMe.length === 0 ? (
-            <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 space-y-3">
-              <CheckSquare className="w-12 h-12 text-slate-300 mx-auto mb-1" />
-              <h3 className="text-sm font-bold text-slate-700">
-                {substituteScope === 'me'
-                  ? `ไม่มีภาระงานสอนแทนที่มอบหมายถึงชื่อ "${currentUser.name}" ในขณะนี้`
-                  : 'ยังไม่มีคำขอออกนอกสถานศึกษาที่มีการขอสอนแทนในระบบ'}
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                {substituteScope === 'me' && allSubstituteRequestsInCollege.length > 0
-                  ? `พบคำขอสอนแทนของครูท่านอื่นในวิทยาลัยทั้งหมด ${allSubstituteRequestsInCollege.length} รายการ หากท่านกำลังทดสอบระบบหรือเข้าสู่ระบบด้วยชื่ออื่น ท่านสามารถกดปุ่มด้านล่างเพื่อดูและกดรับทราบได้ทันที`
-                  : 'เมื่อมีเพื่อนครูระบุชื่อท่านเป็นครูผู้สอนแทน รายการจะแสดงขึ้นที่นี่โดยอัตโนมัติ'}
-              </p>
-              {substituteScope === 'me' && allSubstituteRequestsInCollege.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSubstituteScope('all')}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all"
-                >
-                  <Handshake className="w-4 h-4" />
-                  <span>👉 กดดูรายการสอนแทนทั้งหมดในวิทยาลัย ({allSubstituteRequestsInCollege.length} รายการ)</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {substituteRequestsForMe.map((req, idx) => {
-                const isPendingAck = req.substituteStatus === 'pending';
-                const isAcked = req.substituteStatus === 'acknowledged';
-                const isDeclined = req.substituteStatus === 'declined';
-
-                return (
-                  <div
-                    key={`sub-req-me-${req.id}-${idx}`}
-                    className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between transition-all ${
-                      isPendingAck ? 'border-2 border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'
-                    }`}
-                  >
-                    <div>
-                      {/* Card Top */}
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                          <span className="text-[11px] font-mono text-slate-400 block">{req.id}</span>
-                          <h4 className="text-sm font-bold text-slate-900 mt-0.5 flex items-center gap-2">
-                            <span>ผู้ขอ: <strong>{req.userName}</strong></span>
-                            <span className="text-xs font-normal text-slate-500">({req.branchName})</span>
-                          </h4>
-                        </div>
-
-                        <div>
-                          {isPendingAck && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              รอท่านกดรับทราบ
-                            </span>
-                          )}
-                          {isAcked && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                              ท่านรับทราบแล้ว
-                            </span>
-                          )}
-                          {isDeclined && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-300">
-                              <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                              ท่านแจ้งไม่สะดวก
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Detail */}
-                      <div className="space-y-2 text-xs bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
-                        <div className="flex items-center gap-2 text-slate-700">
-                          <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-                          <span>วันที่สอนแทน: <strong>{req.exitDate}</strong> เวลา: <strong>{req.exitTime} – {req.returnTime} น.</strong></span>
-                        </div>
-
-                        <div className="bg-amber-100/60 p-2.5 rounded-lg border border-amber-200/80 text-amber-950 space-y-1">
-                          <div className="font-bold flex items-center gap-1.5">
-                            <BookOpen className="w-4 h-4 text-amber-700 shrink-0" />
-                            <span>วิชาที่ขอให้สอนแทน: {req.substituteSubject || 'ภาระงานสอนประจำวัน'}</span>
-                          </div>
-                          {req.substituteTasks && (
-                            <div className="text-[11px] text-slate-700">
-                              <span className="font-semibold text-slate-900">งานที่มอบหมายให้นักเรียน:</span> {req.substituteTasks}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
-                          สถานที่ครูไป: {req.destination} (เหตุผล: {req.reason})
-                        </div>
-
-                        {isDeclined && req.substituteDeclineReason && (
-                          <div className="text-[11px] text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200">
-                            เหตุผลที่ไม่สะดวก: {req.substituteDeclineReason}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                      <span className="text-[11px] text-slate-400">
-                        สถานะคำขอ: {req.status === 'approved' ? '🟢 อนุมัติแล้ว' : req.status === 'pending' ? '🟡 รอหัวหน้าอนุมัติ' : '🔴 ไม่อนุมัติ'}
-                      </span>
-
-                      {isPendingAck ? (
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={acknowledgingId === req.id}
-                            onClick={() => {
-                              setDecliningReqId(req.id);
-                              setDeclineReason('');
-                            }}
-                            className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all text-center disabled:opacity-50"
-                          >
-                            ไม่สะดวกสอนแทน
-                          </button>
-                          <button
-                            type="button"
-                            disabled={acknowledgingId === req.id}
-                            onClick={async () => {
-                              setAcknowledgingId(req.id);
-                              try {
-                                await onAcknowledgeSubstitute(req.id);
-                              } finally {
-                                setAcknowledgingId(null);
-                              }
-                            }}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-all text-center disabled:opacity-50"
-                          >
-                            <CheckSquare className="w-3.5 h-3.5" />
-                            <span>{acknowledgingId === req.id ? 'กำลังบันทึกและส่ง Flex...' : '✅ กดรับทราบในระบบ (ส่ง Flex ให้หัวหน้าทันที)'}</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {isAcked ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>✓ ท่านรับทราบเรียบร้อยแล้ว {req.substituteAcknowledgedAt ? `(${req.substituteAcknowledgedAt})` : ''}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                              <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                              <span>ท่านแจ้งไม่สะดวกสอนแทน</span>
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Decline Substitute Dialog Modal */}
-      {decliningReqId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
-            <h3 className="text-base font-bold text-rose-700 flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-5 h-5" />
-              ระบุเหตุผลที่ไม่สะดวกปฏิบัติการสอนแทน
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              ระบบจะแจ้งกลับไปยังครูผู้ขอเพื่อให้จัดหาครูสอนแทนท่านอื่น
-            </p>
-
-            <form onSubmit={handleConfirmDecline} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  เหตุผลที่ไม่สะดวก <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  value={declineReason}
-                  onChange={(e) => setDeclineReason(e.target.value)}
-                  rows={3}
-                  placeholder="เช่น ติดคาบสอนในเวลาเดียวกัน, ติดภารกิจนิเทศนักศึกษาฝึกงาน..."
-                  required
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDecliningReqId(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-sm"
-                >
-                  ยืนยันแจ้งไม่สะดวก
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
     </div>

@@ -134,25 +134,43 @@ export const DepartmentHeadPortal: React.FC<DepartmentHeadPortalProps> = ({
     setTimeout(() => setSyncingLine(false), 800);
   };
 
+  const resolveBranchCode = (val?: string) => {
+    const s = (val || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!s) return '';
+    const matched = branches.find(b => b.id.toLowerCase() === s || b.name.toLowerCase() === s);
+    if (matched) return matched.id.toLowerCase();
+    if (/\bdb\b/.test(s) || s.includes('ธุรกิจ') || s.includes('ดิจิทัล')) return 'db';
+    if (/\bme\b/.test(s) || s.includes('กล')) return 'me';
+    if (/\bac\b/.test(s) || s.includes('บัญชี')) return 'ac';
+    if (/\bel\b/.test(s) || s.includes('ไฟฟ้า')) return 'el';
+    if (/\bat\b/.test(s) || s.includes('ยนต์')) return 'at';
+    if (/\bgen\b/.test(s) || s.includes('สามัญ')) return 'gen';
+    return s;
+  };
+
+  const headBranchCode = resolveBranchCode(currentUser.branchId || currentUser.branchName);
+  const normText = (s?: string) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
   // Requests assigned to this department head to review (teachers in their branch, self-requests, or assigned by ID/name)
-  const pendingTeacherRequests = requests.filter(r => 
-    r.status === 'pending' && (
+  const pendingTeacherRequests = requests.filter(r => {
+    if (r.status !== 'pending') return false;
+    const reqBranchCode = resolveBranchCode(r.branchId || r.branchName);
+    return (
       r.assignedApproverId === currentUser.id ||
-      (Boolean(currentUser.name) && Boolean(r.assignedApproverName?.includes(currentUser.name))) ||
-      (Boolean(currentUser.branchId) && (r.branchId || '').trim().toLowerCase() === currentUser.branchId.trim().toLowerCase())
-    )
-  );
+      (Boolean(currentUser.name) && normText(r.assignedApproverName).includes(normText(currentUser.name))) ||
+      (Boolean(headBranchCode) && reqBranchCode === headBranchCode)
+    );
+  });
 
   // Helper to determine if a request belongs to this department head's branch
   const isBranchRequest = (r: ExitRequest) => {
-    const headBranchId = (currentUser.branchId || '').trim().toLowerCase();
-    const headBranchName = (currentUser.branchName || '').trim().toLowerCase();
-    const reqBranchId = (r.branchId || '').trim().toLowerCase();
-    const reqBranchName = (r.branchName || '').trim().toLowerCase();
+    const reqBranchCode = resolveBranchCode(r.branchId || r.branchName);
+    const headBranchName = normText(currentUser.branchName);
+    const reqBranchName = normText(r.branchName);
 
     return (
-      (headBranchId && reqBranchId === headBranchId) ||
-      (headBranchName && reqBranchName === headBranchName) ||
+      (Boolean(headBranchCode) && reqBranchCode === headBranchCode) ||
+      (Boolean(headBranchName) && reqBranchName === headBranchName) ||
       r.assignedApproverId === currentUser.id ||
       r.userId === currentUser.id
     );

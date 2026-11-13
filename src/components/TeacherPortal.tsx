@@ -68,10 +68,23 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [notes, setNotes] = useState('');
 
   // Automatically determine the approver based on role and branch
-  const currentBranch = branches.find(b => b.id === currentUser.branchId || b.name === currentUser.branchName);
+  const normBranchKey = (s?: string) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const currentBranch = branches.find(b =>
+    normBranchKey(b.id) === normBranchKey(currentUser.branchId) ||
+    normBranchKey(b.name) === normBranchKey(currentUser.branchName) ||
+    normBranchKey(b.name) === normBranchKey(currentUser.branchId) ||
+    normBranchKey(b.id) === normBranchKey(currentUser.branchName)
+  );
+  const resolvedApprover = StorageService.getInstance().getApproverForBranch(
+    currentUser.branchId || currentUser.branchName,
+    currentUser.id
+  );
   const isAdmin = currentUser.role === 'admin';
-  const isHeadOfDept = currentUser.role === 'approver' || (currentBranch && currentBranch.approverUserId === currentUser.id);
-  const autoApproverName = currentBranch ? currentBranch.approverName : 'หัวหน้าสาขาประจำสังกัด';
+  const isHeadOfDept =
+    currentUser.role === 'approver' ||
+    (currentBranch && currentBranch.approverUserId === currentUser.id) ||
+    resolvedApprover.approverId === currentUser.id;
+  const autoApproverName = resolvedApprover.approverName || (currentBranch ? currentBranch.approverName : 'หัวหน้าสาขาประจำสังกัด');
   const [syncingLine, setSyncingLine] = useState<boolean>(false);
 
   const handleManualSyncLine = async () => {
@@ -506,7 +519,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
-                      ส่งคำขอตรงไปยังหัวหน้าสาขา (<strong className="text-slate-800">{autoApproverName}</strong>) เพื่อพิจารณาอนุมัติทันที
+                      ส่งคำขอตรงไปยัง <strong className="text-slate-800">{autoApproverName}</strong> เพื่อพิจารณาอนุมัติทันที
                     </span>
                   </div>
 

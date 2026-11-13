@@ -77,8 +77,9 @@ interface ServerStore {
 function sanitizeRequest(req: any) {
   if (!req || typeof req !== 'object') return null;
   if (req.id && String(req.id).startsWith('__SYS_')) return null;
+  const { _gasSynced, ...rest } = req;
   return {
-    ...req,
+    ...rest,
     id: req.id || `REQ-${Date.now()}`,
     userName: req.userName || 'ครูผู้ขอ',
     destination: req.destination || '-',
@@ -336,14 +337,14 @@ async function startServer() {
     if (targetReq.userId && String(targetReq.userId).trim().startsWith('U') && String(targetReq.userId).trim().length === 33) {
       return String(targetReq.userId).trim();
     }
-    const b = String(targetReq.branchName || targetReq.branchId || '').toLowerCase();
-    if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') return 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
-    if (b.includes('กล') || b === 'me') return 'U9474d32fb566bbfafc743b4511d46f9d';
-    if (b.includes('บัญชี') || b === 'ac') return 'Ue74d275282ab6b5d5c5264188503631d';
-    if (b.includes('ยนต์') || b === 'at') return 'U2529aae8c76082a8840d01549220f589';
-    if (b.includes('ไฟฟ้า') || b === 'el') return 'U6e2636be42c9019262e42e4312a687f9';
-    if (b.includes('สามัญ') || b === 'gen') return 'U38934e344a242b1a8a7741c7ff043895';
-    return 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // Default fallback
+    const b = `${targetReq.branchId || ''} ${targetReq.branchName || ''}`.toLowerCase();
+    if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || /\bdb\b/.test(b)) return 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
+    if (b.includes('กล') || /\bme\b/.test(b)) return 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
+    if (b.includes('บัญชี') || /\bac\b/.test(b)) return 'U84c5267a9feee6f8968d324a3c79c4af';
+    if (b.includes('ยนต์') || /\bat\b/.test(b)) return 'U00d0bcb58a525b4a9e29999ddd8c8246';
+    if (b.includes('ไฟฟ้า') || /\bel\b/.test(b)) return 'U013dfdf06ab0c66db7d898540077d80e';
+    if (b.includes('สามัญ') || /\bgen\b/.test(b)) return 'U0b1a90a74dacb8fbb2be07d19189932c';
+    return null;
   };
 
   // Helper to build LINE Flex Message payload for Teacher status
@@ -905,12 +906,23 @@ async function startServer() {
           }
         } else {
           // Request exists in Google Sheets but not yet in serverStore!
+          const rawBranch = `${row.branchName || ''} ${matchedUser?.branchId || ''} ${matchedUser?.branchName || ''}`.toLowerCase();
+          const resolvedBranch = serverStore.branches.find(b =>
+            b.id.toLowerCase() === rawBranch.trim() ||
+            b.name.toLowerCase() === String(row.branchName || '').trim().toLowerCase() ||
+            (b.id === 'GEN' && rawBranch.includes('สามัญ')) ||
+            (b.id === 'DB' && (rawBranch.includes('ธุรกิจ') || rawBranch.includes('ดิจิทัล'))) ||
+            (b.id === 'ME' && rawBranch.includes('กล')) ||
+            (b.id === 'AC' && rawBranch.includes('บัญชี')) ||
+            (b.id === 'EL' && rawBranch.includes('ไฟฟ้า')) ||
+            (b.id === 'AT' && rawBranch.includes('ยนต์'))
+          );
           const newReq: any = {
             id: reqId,
             userId: matchedUser?.id || `usr-imported-${reqId}`,
             userName: row.userName || matchedUser?.name || 'ครูผู้ขอ',
-            branchId: matchedUser?.branchId || 'DB',
-            branchName: row.branchName || matchedUser?.branchName || 'ธุรกิจดิจิทัล',
+            branchId: resolvedBranch?.id || matchedUser?.branchId || 'GEN',
+            branchName: row.branchName || matchedUser?.branchName || resolvedBranch?.name || 'ครูสามัญ',
             position: matchedUser?.position || 'ครู',
             userPhone: matchedUser?.phone || '',
             userLineId: row.userLineId || matchedUser?.lineId || '',
@@ -923,8 +935,8 @@ async function startServer() {
             destination: row.destination || '',
             reason: row.reason || '',
             travelMethod: row.travelMethod || 'ตามภารกิจราชการ',
-            assignedApproverId: matchedUser?.branchId ? (serverStore.branches.find(b => b.id === matchedUser.branchId)?.approverUserId || '') : '',
-            assignedApproverName: row.approver || 'หัวหน้าสาขาวิชา',
+            assignedApproverId: resolvedBranch?.approverUserId || '',
+            assignedApproverName: row.approver || resolvedBranch?.approverName || 'หัวหน้าสาขาวิชา',
             status: rowStatus === 'approved' ? 'approved' : (rowStatus === 'rejected' ? 'rejected' : 'pending'),
             approvedAt: cleanApprovedAt || (rowStatus === 'approved' ? getThaiTimestamp() : undefined),
             approvedBy: rowStatus === 'approved' ? (row.approver || 'หัวหน้าสาขา') : undefined,
@@ -1437,8 +1449,10 @@ async function startServer() {
           if (sIdx === -1) {
             // New request from client, add to server
             serverStore.requests.unshift(sanitizedClientReq);
-            // Forward to Google Apps Script so it appears in Google Sheets and sends LINE notification
-            forwardToAppsScript('create_request', sanitizedClientReq);
+            // Forward to Google Apps Script ONLY if client has not already forwarded it
+            if (!cReq._gasSynced) {
+              forwardToAppsScript('create_request', sanitizedClientReq);
+            }
           } else {
             // Robust bi-directional merge: winning status (approved/rejected wins over pending) and rich fields preserved
             serverStore.requests[sIdx] = mergeRequest(serverStore.requests[sIdx], sanitizedClientReq);
@@ -1642,7 +1656,7 @@ async function startServer() {
   app.post('/api/requests/:id/status', async (req, res) => {
     try {
       const { id } = req.params;
-      const { status, actorName, rejectionReason } = req.body;
+      const { status, actorName, rejectionReason, skipGasForward, skipLinePush } = req.body;
 
       const idx = serverStore.requests.findIndex(r => r.id === id);
       const timestamp = getThaiTimestamp();
@@ -1687,9 +1701,9 @@ async function startServer() {
       saveServerStore();
 
       // Forward to Google Apps Script (Apps Script handles the single authoritative LINE push)
-      if (serverStore.settings.googleAppsScriptUrl && serverStore.settings.googleAppsScriptUrl.startsWith('http')) {
+      if (!skipGasForward && serverStore.settings.googleAppsScriptUrl && serverStore.settings.googleAppsScriptUrl.startsWith('http')) {
         forwardToAppsScript('update_status', updated);
-      } else {
+      } else if (!skipGasForward && !skipLinePush && !(serverStore.settings.googleAppsScriptUrl && serverStore.settings.googleAppsScriptUrl.startsWith('http'))) {
         // Send LINE Flex Notification to Teacher only if Google Apps Script is not configured
         notifyTeacherApprovalViaLineFlex(updated, status, actorName || 'ผู้อนุมัติ', rejectionReason).catch(e =>
           console.error('Error in notifyTeacherApprovalViaLineFlex:', e)

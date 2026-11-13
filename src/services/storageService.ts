@@ -87,7 +87,7 @@ export class StorageService {
             localStorage.setItem(KEYS.USERS, JSON.stringify(data.users));
           }
           if (Array.isArray(data.branches) && data.branches.length > 0) {
-            localStorage.setItem(KEYS.BRANCHES, JSON.stringify(data.branches));
+            localStorage.setItem(KEYS.BRANCHES, JSON.stringify(this.reconcileBranches(data.branches)));
           }
           if (Array.isArray(data.requests)) {
             const filtered = data.requests.filter((r: any) => r && r.id && !String(r.id).startsWith('__SYS_'));
@@ -168,8 +168,16 @@ export class StorageService {
   }
 
   private initIfEmpty() {
-    if (!localStorage.getItem(KEYS.BRANCHES)) {
+    const existingBranchesRaw = localStorage.getItem(KEYS.BRANCHES);
+    if (!existingBranchesRaw) {
       localStorage.setItem(KEYS.BRANCHES, JSON.stringify(INITIAL_BRANCHES));
+    } else {
+      try {
+        const reconciled = this.reconcileBranches(JSON.parse(existingBranchesRaw));
+        localStorage.setItem(KEYS.BRANCHES, JSON.stringify(reconciled));
+      } catch {
+        localStorage.setItem(KEYS.BRANCHES, JSON.stringify(INITIAL_BRANCHES));
+      }
     }
     const existingUsers = localStorage.getItem(KEYS.USERS);
     if (!existingUsers) {
@@ -481,9 +489,35 @@ export class StorageService {
   }
 
   // --- Branches ---
+  private reconcileBranches(list?: Branch[] | null): Branch[] {
+    const source = Array.isArray(list) ? list : [];
+    return INITIAL_BRANCHES.map(ib => {
+      const found = source.find(b => b && (b.id === ib.id || b.name === ib.name));
+      return {
+        ...ib,
+        ...(found || {}),
+        id: ib.id,
+        name: ib.name,
+        approverUserId: ib.approverUserId,
+        approverName: ib.approverName
+      };
+    });
+  }
+
   public getBranches(): Branch[] {
     const data = localStorage.getItem(KEYS.BRANCHES);
-    return data ? JSON.parse(data) : INITIAL_BRANCHES;
+    if (!data) return INITIAL_BRANCHES;
+    try {
+      const parsed = JSON.parse(data);
+      const reconciled = this.reconcileBranches(parsed);
+      if (JSON.stringify(parsed) !== JSON.stringify(reconciled)) {
+        localStorage.setItem(KEYS.BRANCHES, JSON.stringify(reconciled));
+      }
+      return reconciled;
+    } catch {
+      localStorage.setItem(KEYS.BRANCHES, JSON.stringify(INITIAL_BRANCHES));
+      return INITIAL_BRANCHES;
+    }
   }
 
   public async saveBranches(branches: Branch[]): Promise<boolean> {
@@ -503,69 +537,77 @@ export class StorageService {
   }
 
   // Automatically find approver by branch (Department Heads can approve their own requests)
-  public getApproverForBranch(branchId: string, _requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
+  public getApproverForBranch(branchId: string, requesterUserId?: string): { approverId: string; approverName: string; lineId?: string } {
     const branches = this.getBranches();
-    const branch = branches.find(b => b.id === branchId || b.name === branchId);
     const users = this.getUsers();
+    const cleanText = (s?: string) => (s || '').replace(/\s+/g, ' ').trim();
+    const requester = requesterUserId
+      ? users.find(u => u.id === requesterUserId || cleanText(u.name) === cleanText(requesterUserId))
+      : undefined;
 
-    const bLower = (branchId || '').toLowerCase();
+    const rawQuery = cleanText(branchId).toLowerCase();
+    const branch = branches.find(
+      b => b.id.toLowerCase() === rawQuery || b.name.toLowerCase() === rawQuery
+    );
+
+    const bLower = cleanText(`${branchId || ''} ${requester?.branchId || ''} ${requester?.branchName || ''}`).toLowerCase();
 
     // 1. สาขาธุรกิจดิจิทัล (DB) - หัวหน้าสาขาคือนายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
-    if (bLower === 'db' || bLower.includes('ธุรกิจ') || bLower.includes('ดิจิทัล')) {
+    if (/\bdb\b/.test(bLower) || bLower.includes('ธุรกิจ') || bLower.includes('ดิจิทัล')) {
       const u = users.find(user => user.id === 'usr-import-85625' || user.lineId === 'Uedc4422b785b7a8d1f6c85ae2eb950cf');
       return {
         approverId: 'usr-import-85625',
-        approverName: u ? `${u.name} (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)` : 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
+        approverName: `${cleanText(u?.name) || 'นายเอกราช อาจณรงค์'} (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)`,
         lineId: u?.lineId || 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
       };
     }
 
     // 2. สาขาช่างกลโรงงาน (ME) - หัวหน้าสาขาคือนายคัมภีร์ ช่วยเพชร
-    if (bLower === 'me' || bLower.includes('กล')) {
+    if (/\bme\b/.test(bLower) || bLower.includes('กล')) {
       const u = users.find(user => user.id === 'usr-import-64665' || user.lineId === 'U759b2ec7a4eee7f1c4565b9a7a8194e2');
       return {
         approverId: 'usr-import-64665',
-        approverName: u ? `${u.name} (หัวหน้าสาขาช่างกลโรงงาน)` : 'นายคัมภีร์ ช่วยเพชร (หัวหน้าสาขาช่างกลโรงงาน)',
+        approverName: `${cleanText(u?.name) || 'นายคัมภีร์ ช่วยเพชร'} (หัวหน้าสาขาวิชาช่างกลโรงงาน)`,
         lineId: u?.lineId || 'U759b2ec7a4eee7f1c4565b9a7a8194e2'
       };
     }
 
     // 3. สาขาการบัญชี (AC) - หัวหน้าสาขาคือนางสาวอรอนงค์ ขุนทองแก้ว
-    if (bLower === 'ac' || bLower.includes('บัญชี')) {
+    if (/\bac\b/.test(bLower) || bLower.includes('บัญชี')) {
       const u = users.find(user => user.id === 'usr-import-95822' || user.lineId === 'U84c5267a9feee6f8968d324a3c79c4af');
       return {
         approverId: 'usr-import-95822',
-        approverName: u ? `${u.name} (หัวหน้าสาขาการบัญชี)` : 'นางสาวอรอนงค์ ขุนทองแก้ว (หัวหน้าสาขาการบัญชี)',
+        approverName: `${cleanText(u?.name) || 'นางสาวอรอนงค์ ขุนทองแก้ว'} (หัวหน้าสาขาวิชาการบัญชี)`,
         lineId: u?.lineId || 'U84c5267a9feee6f8968d324a3c79c4af'
       };
     }
 
     // 4. สาขาช่างไฟฟ้า (EL) - หัวหน้าสาขาคือนางนฤมล เรืองพุฒ
-    if (bLower === 'el' || bLower.includes('ไฟฟ้า')) {
+    if (/\bel\b/.test(bLower) || bLower.includes('ไฟฟ้า')) {
       const u = users.find(user => user.id === 'usr-import-68034' || user.lineId === 'U013dfdf06ab0c66db7d898540077d80e');
       return {
         approverId: 'usr-import-68034',
-        approverName: u ? `${u.name} (หัวหน้าสาขาช่างไฟฟ้า)` : 'นางนฤมล เรืองพุฒ (หัวหน้าสาขาช่างไฟฟ้า)',
+        approverName: `${cleanText(u?.name) || 'นางนฤมล เรืองพุฒ'} (หัวหน้าสาขาวิชาช่างไฟฟ้า)`,
         lineId: u?.lineId || 'U013dfdf06ab0c66db7d898540077d80e'
       };
     }
 
     // 5. สาขาช่างยนต์ (AT) - หัวหน้าสาขาคือนายฉัตรชัย ดิษฐาน
-    if (bLower === 'at' || bLower.includes('ยนต์')) {
+    if (/\bat\b/.test(bLower) || bLower.includes('ยนต์')) {
       const u = users.find(user => user.id === 'usr-import-71241' || user.lineId === 'U00d0bcb58a525b4a9e29999ddd8c8246');
       return {
         approverId: 'usr-import-71241',
-        approverName: u ? `${u.name} (หัวหน้าสาขาช่างยนต์)` : 'นายฉัตรชัย ดิษฐาน (หัวหน้าสาขาช่างยนต์)',
+        approverName: `${cleanText(u?.name) || 'นายฉัตรชัย ดิษฐาน'} (หัวหน้าสาขาวิชาช่างยนต์)`,
         lineId: u?.lineId || 'U00d0bcb58a525b4a9e29999ddd8c8246'
       };
     }
 
     // 6. แผนกครูสามัญ (GEN) - หัวหน้าคือคุณครูกนกวรรณ ธนาพล
-    if (bLower === 'gen' || bLower.includes('สามัญ')) {
+    if (/\bgen\b/.test(bLower) || bLower.includes('สามัญ')) {
       const u = users.find(user => user.id === 'usr-915068' || user.lineId === 'U0b1a90a74dacb8fbb2be07d19189932c');
       return {
         approverId: 'usr-915068',
-        approverName: u ? `${u.name} (หัวหน้าครูสามัญ)` : 'นางกนกวรรณ ธนาพล (หัวหน้าครูสามัญ)',
+        approverName: `${cleanText(u?.name) || 'นางกนกวรรณ ธนาพล'} (หัวหน้าแผนกวิชาสามัญสัมพันธ์)`,
         lineId: u?.lineId || 'U0b1a90a74dacb8fbb2be07d19189932c'
       };
     }
@@ -575,15 +617,15 @@ export class StorageService {
       const u = users.find(user => user.id === branch.approverUserId);
       return {
         approverId: branch.approverUserId,
-        approverName: branch.approverName || (u ? `${u.name} (หัวหน้าสาขา${branch.name})` : 'หัวหน้าสาขา'),
+        approverName: branch.approverName || (u ? `${cleanText(u.name)} (หัวหน้าสาขา${branch.name})` : 'หัวหน้าสาขาประจำสังกัด'),
         lineId: u?.lineId
       };
     }
 
     return {
-      approverId: 'usr-import-85625',
-      approverName: 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)',
-      lineId: 'Uedc4422b785b7a8d1f6c85ae2eb950cf'
+      approverId: 'head-branch',
+      approverName: 'หัวหน้าสาขาประจำสังกัด',
+      lineId: ''
     };
   }
 
@@ -749,7 +791,7 @@ export class StorageService {
   public createRequest(requestData: Omit<ExitRequest, 'id' | 'submittedAt' | 'status' | 'assignedApproverId' | 'assignedApproverName' | 'qrToken'>): ExitRequest {
     const users = this.getUsers();
     const requester = users.find(u => u.id === requestData.userId || (requestData.userName && u.name === requestData.userName));
-    const effectiveBranch = requestData.branchId || requester?.branchId || (requestData as any).branchName || requester?.branchName || 'DB';
+    const effectiveBranch = requestData.branchId || requester?.branchId || (requestData as any).branchName || requester?.branchName || 'GEN';
     const effectiveBranchName = (requestData as any).branchName || requester?.branchName || effectiveBranch;
     const approver = this.getApproverForBranch(effectiveBranch, requestData.userId);
 
@@ -762,6 +804,8 @@ export class StorageService {
     const thaiSubmittedAt = `${now.getFullYear() + 543}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     const finalUserName = (requester?.name || requestData.userName || 'ครูผู้ขอ').replace(/\s+/g, ' ').trim();
+    const curSettings = this.getSettings();
+    const willSyncToGas = Boolean(curSettings.googleAppsScriptUrl && curSettings.autoSyncWithGoogleSheet !== false);
 
     const newRequest: ExitRequest = {
       ...requestData,
@@ -780,7 +824,8 @@ export class StorageService {
       teacherLineId: requester?.lineId || (requestData as any).teacherLineId || (requestData as any).userLineId || '',
       substituteStatus: requestData.hasClasses ? 'pending' : 'not_required',
       qrToken,
-      userUsername: requester?.username || (requestData as any).userUsername
+      userUsername: requester?.username || (requestData as any).userUsername,
+      ...(willSyncToGas ? { _gasSynced: true } : {})
     } as any;
 
     const requests = [newRequest, ...this.getRequests()];
@@ -799,7 +844,6 @@ export class StorageService {
         : `ยื่นคำขอใหม่ ส่งตรงไปยังหัวหน้าสาขา (${approver.approverName}) เพื่อพิจารณาอนุมัติ`
     });
 
-    const curSettings = this.getSettings();
     this.syncToAppsScript('create_request', {
       ...newRequest,
       lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken,
@@ -989,6 +1033,7 @@ export class StorageService {
     });
 
     const curSettings = this.getSettings();
+    const skipGasForward = Boolean(curSettings.googleAppsScriptUrl && curSettings.autoSyncWithGoogleSheet !== false);
     this.syncToAppsScript('update_status', {
       ...updated,
       lineToken: curSettings.lineChannelAccessToken || INITIAL_SETTINGS.lineChannelAccessToken
@@ -1004,7 +1049,9 @@ export class StorageService {
           actorName: approverLabel,
           actorId: actor.id,
           actorRole: actorRoleTitle,
-          rejectionReason
+          rejectionReason,
+          skipGasForward,
+          skipLinePush: true
         })
       }).catch(() => {});
     } catch {}
@@ -1355,8 +1402,9 @@ export class StorageService {
 
       // 2. Sync & Adopt Branches from Server Store as Master Source
       if (Array.isArray(data.branches) && data.branches.length > 0) {
+        const reconciledBranches = this.reconcileBranches(data.branches);
         const localBranchesStr = localStorage.getItem(KEYS.BRANCHES) || '';
-        const serverBranchesStr = JSON.stringify(data.branches);
+        const serverBranchesStr = JSON.stringify(reconciledBranches);
         if (localBranchesStr !== serverBranchesStr) {
           localStorage.setItem(KEYS.BRANCHES, serverBranchesStr);
           hasChanges = true;
@@ -1428,7 +1476,7 @@ export class StorageService {
         newlyApproved,
         allRequests: serverRequests,
         allUsers: data.users || this.getUsers(),
-        allBranches: data.branches || this.getBranches(),
+        allBranches: data.branches ? this.reconcileBranches(data.branches) : this.getBranches(),
         allLogs: this.getLogs(),
         settings: this.getSettings(),
         lastWebhookEvent: data.lastWebhookEvent

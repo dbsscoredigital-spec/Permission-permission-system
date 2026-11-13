@@ -94,7 +94,8 @@ export class LineService {
     to: string,
     messages: any[],
     customToken?: string,
-    reqId?: string
+    reqId?: string,
+    force: boolean = false
   ): Promise<{ success: boolean; message: string; code?: string; details?: any }> {
     try {
       const storage = StorageService.getInstance();
@@ -157,7 +158,7 @@ export class LineService {
               to: targetTo,
               messages,
               reqId,
-              force: true
+              force
             }
           });
 
@@ -344,25 +345,28 @@ export class LineService {
 
     this.saveMessages([newMsg, ...msgs]);
 
-    // Find approver's LINE ID:
-    // Rule: Branch Head (หัวหน้าสาขา) is authoritative.
-    // สาขาวิชาธุรกิจดิจิทัล -> หัวหน้าสาขาคือนายเอกราช อาจณรงค์ (Uedc4422b785b7a8d1f6c85ae2eb950cf)
-    const b = (req.branchId || req.branchName || '').toLowerCase();
+    // Find approver's LINE ID across all 6 branches
+    const b = `${req.branchId || ''} ${req.branchName || ''}`.replace(/\s+/g, ' ').trim().toLowerCase();
     let approverLineId = '';
 
-    if (b === 'db' || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
+    if (/\bdb\b/.test(b) || b.includes('ธุรกิจ') || b.includes('ดิจิทัล')) {
       approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
       req.assignedApproverName = 'นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)';
-    } else if (b === 'me' || b.includes('กล')) {
+    } else if (/\bme\b/.test(b) || b.includes('กล')) {
       approverLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2'; // นายคัมภีร์ ช่วยเพชร
-    } else if (b === 'ac' || b.includes('บัญชี')) {
+      req.assignedApproverName = 'นายคัมภีร์ ช่วยเพชร (หัวหน้าสาขาวิชาช่างกลโรงงาน)';
+    } else if (/\bac\b/.test(b) || b.includes('บัญชี')) {
       approverLineId = 'U84c5267a9feee6f8968d324a3c79c4af'; // นางสาวอรอนงค์ ขุนทองแก้ว
-    } else if (b === 'el' || b.includes('ไฟฟ้า')) {
+      req.assignedApproverName = 'นางสาวอรอนงค์ ขุนทองแก้ว (หัวหน้าสาขาวิชาการบัญชี)';
+    } else if (/\bel\b/.test(b) || b.includes('ไฟฟ้า')) {
       approverLineId = 'U013dfdf06ab0c66db7d898540077d80e'; // นางนฤมล เรืองพุฒ
-    } else if (b === 'at' || b.includes('ยนต์')) {
+      req.assignedApproverName = 'นางนฤมล เรืองพุฒ (หัวหน้าสาขาวิชาช่างไฟฟ้า)';
+    } else if (/\bat\b/.test(b) || b.includes('ยนต์')) {
       approverLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246'; // นายฉัตรชัย ดิษฐาน
-    } else if (b === 'gen' || b.includes('สามัญ')) {
+      req.assignedApproverName = 'นายฉัตรชัย ดิษฐาน (หัวหน้าสาขาวิชาช่างยนต์)';
+    } else if (/\bgen\b/.test(b) || b.includes('สามัญ')) {
       approverLineId = 'U0b1a90a74dacb8fbb2be07d19189932c'; // นางกนกวรรณ ธนาพล
+      req.assignedApproverName = 'นางกนกวรรณ ธนาพล (หัวหน้าแผนกวิชาสามัญสัมพันธ์)';
     }
 
     // Name-based override if assignedApproverName specifies an approver
@@ -390,15 +394,33 @@ export class LineService {
       approverLineId = req.assignedApproverLineId;
     }
 
-    // Default fallback (For ธุรกิจดิจิทัล, defaults to นายเอกราช อาจณรงค์ Uedc4422b785b7a8d1f6c85ae2eb950cf)
-    if (!approverLineId) {
-      approverLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
+    // Check if Google Apps Script create_request already dispatches the single authoritative Flex
+    const storage = StorageService.getInstance();
+    const settings = storage.getSettings();
+    const gasHandled = Boolean(
+      settings.googleAppsScriptUrl &&
+      settings.googleAppsScriptUrl.startsWith('https://script.google.com/macros/s/') &&
+      settings.autoSyncWithGoogleSheet !== false
+    );
+    if (gasHandled && !force) {
+      return {
+        success: true,
+        message: 'ส่ง LINE แจ้งเตือนหัวหน้าสาขาผ่าน Google Apps Script สำเร็จแล้ว 📲'
+      };
     }
 
-    // Build and push real LINE Flex Message to approver immediately
+    if (!approverLineId) {
+      return {
+        success: false,
+        code: 'INVALID_USER_ID',
+        message: 'ไม่พบ LINE ID ของหัวหน้าสาขาประจำสังกัด'
+      };
+    }
+
+    // Fallback direct push only when Google Apps Script auto-sync is disabled or unavailable
     const flexPayload = this.generateLineFlexMessagePayload(req);
     const pushReqId = force ? `${req.id}_ack_${Date.now()}` : req.id;
-    return await this.pushToLineBackend(approverLineId, [flexPayload], undefined, pushReqId);
+    return await this.pushToLineBackend(approverLineId, [flexPayload], undefined, pushReqId, force);
   }
 
   /**
@@ -509,29 +531,38 @@ export class LineService {
       }
     }
 
+    // Check if Google Apps Script update_status already dispatches the single authoritative Flex to teacher
+    const settings = storage.getSettings();
+    const gasHandled = Boolean(
+      settings.googleAppsScriptUrl &&
+      settings.googleAppsScriptUrl.startsWith('https://script.google.com/macros/s/') &&
+      settings.autoSyncWithGoogleSheet !== false
+    );
+    if (gasHandled) {
+      return { success: true, message: 'ส่ง LINE แจ้งเตือนผลให้ครูผู้ขอผ่าน Google Apps Script เรียบร้อยแล้ว 📲' };
+    }
+
     // Branch fallback if teacher LINE ID was not found by direct lookup
     if (!teacherLineId || !teacherLineId.trim().startsWith('U') || teacherLineId.startsWith('U_')) {
-      const b = (req.branchName || req.branchId || '').toLowerCase();
-      if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || b === 'db') {
-        teacherLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // นายเอกราช อาจณรงค์
-      } else if (b.includes('กล') || b === 'me') {
-        teacherLineId = 'U9474d32fb566bbfafc743b4511d46f9d';
-      } else if (b.includes('บัญชี') || b === 'ac') {
-        teacherLineId = 'Ue74d275282ab6b5d5c5264188503631d';
-      } else if (b.includes('ยนต์') || b === 'at') {
-        teacherLineId = 'U2529aae8c76082a8840d01549220f589';
-      } else if (b.includes('ไฟฟ้า') || b === 'el') {
-        teacherLineId = 'U6e2636be42c9019262e42e4312a687f9';
-      } else if (b.includes('สามัญ') || b === 'gen') {
-        teacherLineId = 'U38934e344a242b1a8a7741c7ff043895';
-      } else {
-        teacherLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf'; // Default fallback
+      const b = `${req.branchId || ''} ${req.branchName || ''}`.toLowerCase();
+      if (b.includes('ธุรกิจ') || b.includes('ดิจิทัล') || /\bdb\b/.test(b)) {
+        teacherLineId = 'Uedc4422b785b7a8d1f6c85ae2eb950cf';
+      } else if (b.includes('กล') || /\bme\b/.test(b)) {
+        teacherLineId = 'U759b2ec7a4eee7f1c4565b9a7a8194e2';
+      } else if (b.includes('บัญชี') || /\bac\b/.test(b)) {
+        teacherLineId = 'U84c5267a9feee6f8968d324a3c79c4af';
+      } else if (b.includes('ยนต์') || /\bat\b/.test(b)) {
+        teacherLineId = 'U00d0bcb58a525b4a9e29999ddd8c8246';
+      } else if (b.includes('ไฟฟ้า') || /\bel\b/.test(b)) {
+        teacherLineId = 'U013dfdf06ab0c66db7d898540077d80e';
+      } else if (b.includes('สามัญ') || /\bgen\b/.test(b)) {
+        teacherLineId = 'U0b1a90a74dacb8fbb2be07d19189932c';
       }
     }
 
     if (teacherLineId && teacherLineId.trim().startsWith('U') && !teacherLineId.startsWith('U_')) {
       const flexStatusPayload = this.generateTeacherStatusFlexPayload(req, status, approverName, rejectionReason);
-      return await this.pushToLineBackend(teacherLineId, [flexStatusPayload]);
+      return await this.pushToLineBackend(teacherLineId, [flexStatusPayload], undefined, `${req.id}_teacher_${status}`, false);
     }
 
     return { success: true, message: 'บันทึกสถานะเรียบร้อยแล้ว' };

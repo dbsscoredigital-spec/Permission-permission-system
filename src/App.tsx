@@ -227,14 +227,7 @@ export default function App() {
         handledUrlActionRef.current = true;
         window.history.replaceState({}, document.title, window.location.pathname);
         const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-        const approverUser = users.find(u => u.role === 'approver' && (found ? u.branchId === found.branchId : true)) || currentUser;
-        
-        // Notify server status endpoint immediately
-        fetch(`/api/requests/${encodeURIComponent(reqId)}/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'approved', actorName: approverUser?.name || 'หัวหน้าสาขา' })
-        }).catch(() => {});
+        const approverUser = users.find(u => u.role === 'approver' && (found ? (u.branchId === found.branchId || u.branchName === found.branchName) : true)) || currentUser;
 
         const updated = storage.updateRequestStatus(reqId, 'approved', approverUser);
         if (updated) {
@@ -249,6 +242,13 @@ export default function App() {
           });
           showToast(`🎉 อนุมัติคำขอ ${reqId} สำเร็จแล้ว! พร้อมออกบัตรผ่าน QR Code ทันที`, 'success');
         } else {
+          const skipGasForward = Boolean(settings.googleAppsScriptUrl && settings.autoSyncWithGoogleSheet !== false);
+          fetch(`/api/requests/${encodeURIComponent(reqId)}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'approved', actorName: approverUser?.name || 'หัวหน้าสาขา', skipGasForward })
+          }).catch(() => {});
+
           // If request was created on another device, sync with server
           storage.syncWithServer().then((syncRes) => {
             const reqList = syncRes.allRequests || storage.getRequests();
@@ -271,13 +271,7 @@ export default function App() {
         handledUrlActionRef.current = true;
         window.history.replaceState({}, document.title, window.location.pathname);
         const found = requests.find(r => r.id.toLowerCase() === reqId.toLowerCase());
-        const approverUser = users.find(u => u.role === 'approver' && (found ? u.branchId === found.branchId : true)) || currentUser;
-        
-        fetch(`/api/requests/${encodeURIComponent(reqId)}/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'rejected', actorName: approverUser?.name || 'หัวหน้าสาขา', rejectionReason: 'ไม่อนุมัติผ่าน LINE' })
-        }).catch(() => {});
+        const approverUser = users.find(u => u.role === 'approver' && (found ? (u.branchId === found.branchId || u.branchName === found.branchName) : true)) || currentUser;
 
         const updated = storage.updateRequestStatus(reqId, 'rejected', approverUser, 'ไม่อนุมัติผ่าน LINE');
         if (updated) {
@@ -377,20 +371,6 @@ export default function App() {
 
   // 2. Approve Request (Triggers LINE Message back to Teacher)
   const handleApproveRequest = async (requestId: string) => {
-    // 1. Immediately call backend status endpoint to guarantee server-wide persistence
-    try {
-      await fetch(`/api/requests/${encodeURIComponent(requestId)}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'approved',
-          actorName: currentUser.name,
-          actorId: currentUser.id,
-          actorRole: currentUser.role
-        })
-      });
-    } catch {}
-
     const updated = storage.updateRequestStatus(requestId, 'approved', currentUser);
     if (updated) {
       const lineRes = await lineService.sendTeacherStatusNotification(updated, 'approved', currentUser.name);
@@ -406,20 +386,6 @@ export default function App() {
 
   // 3. Reject Request (Triggers LINE Message back to Teacher)
   const handleRejectRequest = async (requestId: string, reason: string) => {
-    try {
-      await fetch(`/api/requests/${encodeURIComponent(requestId)}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'rejected',
-          actorName: currentUser.name,
-          actorId: currentUser.id,
-          actorRole: currentUser.role,
-          rejectionReason: reason
-        })
-      });
-    } catch {}
-
     const updated = storage.updateRequestStatus(requestId, 'rejected', currentUser, reason);
     if (updated) {
       await lineService.sendTeacherStatusNotification(updated, 'rejected', currentUser.name, reason);
@@ -504,10 +470,19 @@ export default function App() {
   };
 
   // Count pending for current approver's branch
-  const pendingApproverCount = requests.filter(r => 
-    r.status === 'pending' && 
-    (currentUser.role === 'admin' || r.branchId === currentUser.branchId || r.branchName === currentUser.branchName)
-  ).length;
+  const pendingApproverCount = requests.filter(r => {
+    if (r.status !== 'pending') return false;
+    if (currentUser.role === 'admin' || r.assignedApproverId === currentUser.id) return true;
+    const uBranch = `${currentUser.branchId || ''} ${currentUser.branchName || ''}`.toLowerCase();
+    const rBranch = `${r.branchId || ''} ${r.branchName || ''}`.toLowerCase();
+    if (uBranch.includes('สามัญ') || /\bgen\b/.test(uBranch)) return rBranch.includes('สามัญ') || /\bgen\b/.test(rBranch);
+    if (uBranch.includes('ธุรกิจ') || uBranch.includes('ดิจิทัล') || /\bdb\b/.test(uBranch)) return rBranch.includes('ธุรกิจ') || rBranch.includes('ดิจิทัล') || /\bdb\b/.test(rBranch);
+    if (uBranch.includes('กล') || /\bme\b/.test(uBranch)) return rBranch.includes('กล') || /\bme\b/.test(rBranch);
+    if (uBranch.includes('บัญชี') || /\bac\b/.test(uBranch)) return rBranch.includes('บัญชี') || /\bac\b/.test(rBranch);
+    if (uBranch.includes('ไฟฟ้า') || /\bel\b/.test(uBranch)) return rBranch.includes('ไฟฟ้า') || /\bel\b/.test(rBranch);
+    if (uBranch.includes('ยนต์') || /\bat\b/.test(uBranch)) return rBranch.includes('ยนต์') || /\bat\b/.test(rBranch);
+    return r.branchId === currentUser.branchId || r.branchName === currentUser.branchName;
+  }).length;
 
   // Instant 1-Click LINE Approval Confirmation Modal
   const renderDirectActionResultModal = () => {

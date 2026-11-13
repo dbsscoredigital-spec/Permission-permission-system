@@ -281,8 +281,8 @@ export const INITIAL_USERS: User[] = [
     "username": "saowanee19781@gmail.com",
     "password": "1234",
     "name": "นางเสาวณี       ชุมศรี",
-    "branchName": "ธุรกิจดิจิทัล",
-    "branchId": "ธุรกิจดิจิทัล",
+    "branchName": "ครูสามัญ",
+    "branchId": "ครูสามัญ",
     "role": "teacher",
     "lineId": "U35fa00096ca7f74fce5d0ce9feccacb1",
     "position": "ครูผู้สอน"
@@ -303,8 +303,8 @@ export const INITIAL_USERS: User[] = [
     "username": "konlakranning@gmail.com",
     "password": "1234",
     "name": "นางศรัญญา      กลการ",
-    "branchName": "ธุรกิจดิจิทัล",
-    "branchId": "ธุรกิจดิจิทัล",
+    "branchName": "ครูสามัญ",
+    "branchId": "ครูสามัญ",
     "role": "teacher",
     "lineId": "Ube1f1d0c57321a5d20f5ee53149c9f76",
     "position": "ครูผู้สอน"
@@ -314,8 +314,8 @@ export const INITIAL_USERS: User[] = [
     "username": "Antika",
     "password": "1234",
     "name": "นางอันธิกา       ชายแก้ว",
-    "branchName": "ธุรกิจดิจิทัล",
-    "branchId": "ธุรกิจดิจิทัล",
+    "branchName": "ครูสามัญ",
+    "branchId": "ครูสามัญ",
     "role": "teacher",
     "lineId": "U560ee7aecc0b9f8b3a22566956f39eac",
     "position": "ครูผู้สอน"
@@ -338,14 +338,14 @@ export const INITIAL_BRANCHES: Branch[] = [
     "id": "ME",
     "name": "ช่างกลโรงงาน",
     "approverUserId": "usr-import-64665",
-    "approverName": "นายคัมภีร์ ช่วยเพชร หัวหน้าสาขา (หัวหน้าสาขาช่างกลโรงงาน)",
+    "approverName": "นายคัมภีร์ ช่วยเพชร (หัวหน้าสาขาวิชาช่างกลโรงงาน)",
     "color": "#4f46e5"
   },
   {
     "id": "DB",
     "name": "ธุรกิจดิจิทัล",
     "approverUserId": "usr-import-85625",
-    "approverName": "นายเอกราช       อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
+    "approverName": "นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล)",
     "color": "#0284c7"
   },
   {

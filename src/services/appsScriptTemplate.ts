@@ -102,7 +102,7 @@ function doPost(e) {
       var pushTo = String(pushPayload.to || "").trim();
       var pushMsgs = pushPayload.messages || [];
 
-      // ป้องกันการส่ง Flex ซ้ำซ้อน (ตรวจจับจาก reqId หรือ altText เว้นแต่ force === true เช่น เมื่อครูสอนแทนกดรับทราบ)
+      // ป้องกันการส่ง Flex ซ้ำซ้อน (ตรวจสอบทั้ง lock_push_post และ lock_approver_flex / lock_teacher_flex)
       var pReqId = String(pushPayload.reqId || "").trim();
       var isForced = pushPayload.force === true || pReqId.indexOf("_ack_") !== -1;
       if (!pReqId && pushMsgs.length > 0) {
@@ -111,8 +111,14 @@ function doPost(e) {
       }
       if (pReqId && !isForced) {
         var scriptCache = CacheService.getScriptCache();
+        var cleanReqId = pReqId.replace(/_teacher_(approved|rejected)$/i, "");
         var cachePushKey = "lock_push_post_" + pReqId + "_" + pushTo;
-        if (scriptCache && scriptCache.get(cachePushKey)) {
+        if (scriptCache && (
+          scriptCache.get(cachePushKey) ||
+          (pReqId.indexOf("_teacher_") === -1 && scriptCache.get("lock_approver_flex_" + cleanReqId)) ||
+          (pReqId.indexOf("_teacher_approved") !== -1 && scriptCache.get("lock_teacher_flex_" + cleanReqId + "_approved")) ||
+          (pReqId.indexOf("_teacher_rejected") !== -1 && scriptCache.get("lock_teacher_flex_" + cleanReqId + "_rejected"))
+        )) {
           return ContentService.createTextOutput(JSON.stringify({ status: "success", skippedDuplicate: true }))
             .setMimeType(ContentService.MimeType.JSON);
         }
@@ -222,8 +228,13 @@ function doGet(e) {
     }
     if (pReqId) {
       var scriptCache = CacheService.getScriptCache();
+      var cleanReqId = pReqId.replace(/_teacher_(approved|rejected)$/i, "");
       var cachePushKey = "lock_push_get_" + pReqId + "_" + pushTo;
-      if (scriptCache && scriptCache.get(cachePushKey)) {
+      if (scriptCache && (
+        scriptCache.get(cachePushKey) ||
+        scriptCache.get("lock_push_post_" + pReqId + "_" + pushTo) ||
+        (pReqId.indexOf("_teacher_") === -1 && scriptCache.get("lock_approver_flex_" + cleanReqId))
+      )) {
         return ContentService.createTextOutput(JSON.stringify({ status: "success", skippedDuplicate: true })).setMimeType(ContentService.MimeType.JSON);
       }
       if (scriptCache) scriptCache.put(cachePushKey, "sent", 900);
@@ -708,69 +719,80 @@ function handleLineEvents(events) {
 
 // 1. จัดการสร้างคำขอใหม่
 function handleCreateRequest(req) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const reqSheet = ss.getSheetByName("Requests");
-  const logSheet = ss.getSheetByName("ApprovalLog");
-
   const reqId = String(req && req.id || "").trim();
   if (!reqId) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Missing request id" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // ป้องกันการบันทึกซ้ำซ้อน: หากมีคำขอนี้ในระบบแล้ว ให้ข้ามทันที ไม่สร้างแถวซ้ำและไม่ส่ง Flex เบิ้ล
-  if (reqSheet && reqSheet.getLastRow() > 1) {
-    const existingRows = reqSheet.getDataRange().getValues();
-    for (let r = 1; r < existingRows.length; r++) {
-      if (String(existingRows[r][0] || "").trim() === reqId) {
-        return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: reqId, duplicate: true }))
-          .setMimeType(ContentService.MimeType.JSON);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const reqSheet = ss.getSheetByName("Requests");
+    const logSheet = ss.getSheetByName("ApprovalLog");
+
+    // ป้องกันการบันทึกซ้ำซ้อน: หากมีคำขอนี้ในระบบแล้ว ให้ข้ามทันที ไม่สร้างแถวซ้ำและไม่ส่ง Flex เบิ้ล
+    if (reqSheet && reqSheet.getLastRow() > 1) {
+      const existingRows = reqSheet.getDataRange().getValues();
+      for (let r = 1; r < existingRows.length; r++) {
+        if (String(existingRows[r][0] || "").trim() === reqId) {
+          return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: reqId, duplicate: true }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
       }
     }
+
+    // บันทึกลง Requests Sheet (บันทึกครบ 23 คอลัมน์)
+    reqSheet.appendRow([
+      req.id,                                      // 0: id
+      req.submittedAt,                             // 1: submittedAt
+      req.userName,                                // 2: userName
+      req.branchName,                              // 3: branchName
+      req.exitDate,                                // 4: exitDate
+      req.exitTime,                                // 5: exitTime
+      req.returnTime,                              // 6: returnTime
+      req.destination,                             // 7: destination
+      req.reason,                                  // 8: reason
+      req.assignedApproverName,                    // 9: assignedApproverName
+      req.status || "pending",                     // 10: status
+      req.approvedAt || "",                        // 11: approvedAt
+      req.notes || "",                             // 12: notes
+      req.travelMethod || "",                      // 13: travelMethod
+      req.qrToken || "",                           // 14: qrToken
+      req.hasClasses ? true : false,               // 15: hasClasses
+      req.substituteTeacherName || "",             // 16: substituteTeacherName
+      req.substituteSubject || "",                 // 17: substituteSubject
+      req.substituteStatus || (req.hasClasses ? "pending" : "not_required"), // 18: substituteStatus
+      req.substituteTasks || "",                   // 19: substituteTasks
+      req.userLineId || req.teacherLineId || "",   // 20: userLineId
+      req.substituteTeacherId || "",               // 21: substituteTeacherId
+      req.substituteAcknowledgedAt || ""           // 22: substituteAcknowledgedAt
+    ]);
+
+    const isSystemPacket = reqId.indexOf("__SYS_") === 0 || reqId.indexOf("__TEST_") === 0 || req.status === "system_sync";
+    if (!isSystemPacket) {
+      // บันทึก Log
+      if (logSheet) {
+        logSheet.appendRow([
+          "LOG-" + new Date().getTime(),
+          req.id,
+          req.userName,
+          "submit",
+          new Date(),
+          "ยื่นคำขอใหม่ ส่งตรงไปยัง " + req.assignedApproverName
+        ]);
+      }
+
+      // ส่งแจ้งเตือน LINE Flex Message ตรงไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
+      sendLineFlexMessageToApprover(req);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: req.id }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-
-  // บันทึกลง Requests Sheet (บันทึกครบ 23 คอลัมน์)
-  reqSheet.appendRow([
-    req.id,                                      // 0: id
-    req.submittedAt,                             // 1: submittedAt
-    req.userName,                                // 2: userName
-    req.branchName,                              // 3: branchName
-    req.exitDate,                                // 4: exitDate
-    req.exitTime,                                // 5: exitTime
-    req.returnTime,                              // 6: returnTime
-    req.destination,                             // 7: destination
-    req.reason,                                  // 8: reason
-    req.assignedApproverName,                    // 9: assignedApproverName
-    req.status || "pending",                     // 10: status
-    req.approvedAt || "",                        // 11: approvedAt
-    req.notes || "",                             // 12: notes
-    req.travelMethod || "",                      // 13: travelMethod
-    req.qrToken || "",                           // 14: qrToken
-    req.hasClasses ? true : false,               // 15: hasClasses
-    req.substituteTeacherName || "",             // 16: substituteTeacherName
-    req.substituteSubject || "",                 // 17: substituteSubject
-    req.substituteStatus || (req.hasClasses ? "pending" : "not_required"), // 18: substituteStatus
-    req.substituteTasks || "",                   // 19: substituteTasks
-    req.userLineId || req.teacherLineId || "",   // 20: userLineId
-    req.substituteTeacherId || "",               // 21: substituteTeacherId
-    req.substituteAcknowledgedAt || ""           // 22: substituteAcknowledgedAt
-  ]);
-
-  // บันทึก Log
-  logSheet.appendRow([
-    "LOG-" + new Date().getTime(),
-    req.id,
-    req.userName,
-    "submit",
-    new Date(),
-    "ยื่นคำขอใหม่ ส่งตรงไปยัง " + req.assignedApproverName
-  ]);
-
-  // ส่งแจ้งเตือน LINE Flex Message ตรงไปยังหัวหน้าสาขาเพื่อพิจารณาอนุมัติทันที
-  sendLineFlexMessageToApprover(req);
-
-  return ContentService.createTextOutput(JSON.stringify({ status: "success", requestId: req.id }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // 2. จัดการเมื่อครูผู้สอนแทนกดรับทราบในเว็บ (substitute_ack)
@@ -936,20 +958,30 @@ function sendLineFlexMessageToApprover(req, isForce) {
   const token = (req && req.lineToken) || getSettingValue("LINE_CHANNEL_ACCESS_TOKEN") || "2blq79G/0Wm2Vr3E+HpnBtw8ndTvFI5LyE8iTQTPh3I4FURk+1bizjv2kMp1nSdFid1nAMxyvRp7y84zCPr15+6VA68nOPunujUnteDs7gbejq0klBfFOyjx1bz8aB+r0VIhYj8fi5DNDQhCyIhH1wdB04t89/1O/w1cDnyilFU=";
   if (!token || token.includes("ใส่_TOKEN")) return;
 
-  var branchQuery = String((req && (req.branchId || req.branchName)) || "").toLowerCase();
+  var branchQuery = (String((req && req.branchId) || "") + " " + String((req && req.branchName) || "")).toLowerCase();
 
   let approverLineId = "";
-  if (branchQuery === "db" || branchQuery.indexOf("ธุรกิจ") !== -1 || branchQuery.indexOf("ดิจิทัล") !== -1) {
+  if (branchQuery.indexOf("ธุรกิจ") !== -1 || branchQuery.indexOf("ดิจิทัล") !== -1 || /\\bdb\\b/.test(branchQuery)) {
     approverLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์ (หัวหน้าสาขาวิชาธุรกิจดิจิทัล - อนุมัติตัวเองได้)
+  } else if (branchQuery.indexOf("กล") !== -1 || /\\bme\\b/.test(branchQuery)) {
+    approverLineId = "U759b2ec7a4eee7f1c4565b9a7a8194e2"; // นายคัมภีร์ ช่วยเพชร
+  } else if (branchQuery.indexOf("บัญชี") !== -1 || /\\bac\\b/.test(branchQuery)) {
+    approverLineId = "U84c5267a9feee6f8968d324a3c79c4af"; // นางสาวอรอนงค์ ขุนทองแก้ว
+  } else if (branchQuery.indexOf("ไฟฟ้า") !== -1 || /\\bel\\b/.test(branchQuery)) {
+    approverLineId = "U013dfdf06ab0c66db7d898540077d80e"; // นางนฤมล เรืองพุฒ
+  } else if (branchQuery.indexOf("ยนต์") !== -1 || /\\bat\\b/.test(branchQuery)) {
+    approverLineId = "U00d0bcb58a525b4a9e29999ddd8c8246"; // นายฉัตรชัย ดิษฐาน
+  } else if (branchQuery.indexOf("สามัญ") !== -1 || /\\bgen\\b/.test(branchQuery)) {
+    approverLineId = "U0b1a90a74dacb8fbb2be07d19189932c"; // นางกนกวรรณ ธนาพล
   } else {
-    approverLineId = (req && req.assignedApproverLineId) || (req && req.approverLineId) || getApproverLineId(req.branchId, req.userId);
+    approverLineId = (req && req.assignedApproverLineId) || (req && req.approverLineId) || getApproverLineId(req.branchId || req.branchName, req.userId);
     if (!approverLineId || approverLineId.indexOf("U") !== 0 || approverLineId.indexOf("U_") === 0) {
       approverLineId = getUserLineId(req.assignedApproverName || req.approver || req.assignedApproverId);
     }
   }
 
   if (!approverLineId || approverLineId.indexOf("U") !== 0 || approverLineId.indexOf("U_") === 0) {
-    approverLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // Default to นายเอกราช อาจณรงค์
+    return;
   }
 
   let scriptUrl = "";
@@ -1079,21 +1111,19 @@ function sendLineNotificationToTeacher(req) {
       : getUserLineId(req.userId || req.userName));
 
   if (!teacherLineId || teacherLineId.indexOf("U_") === 0) {
-    const b = String(req.branchName || "").toLowerCase();
-    if (b.indexOf("ธุรกิจ") !== -1 || b.indexOf("ดิจิทัล") !== -1 || b === "db") {
+    const b = (String(req.branchId || "") + " " + String(req.branchName || "")).toLowerCase();
+    if (b.indexOf("ธุรกิจ") !== -1 || b.indexOf("ดิจิทัล") !== -1 || /\\bdb\\b/.test(b)) {
       teacherLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์
-    } else if (b.indexOf("กล") !== -1 || b === "me") {
-      teacherLineId = "U9474d32fb566bbfafc743b4511d46f9d"; // นายสุมัณฑิต ทิพย์มนตรี
-    } else if (b.indexOf("บัญชี") !== -1 || b === "ac") {
-      teacherLineId = "Ue74d275282ab6b5d5c5264188503631d"; // นางสาวพุทธชาติ จันทลิลา
-    } else if (b.indexOf("ยนต์") !== -1 || b === "at") {
-      teacherLineId = "U2529aae8c76082a8840d01549220f589"; // นายศักดิ์สิริ นิลเอก
-    } else if (b.indexOf("ไฟฟ้า") !== -1 || b === "el") {
-      teacherLineId = "U6e2636be42c9019262e42e4312a687f9"; // นายทิวากร สามิภักดิ์
-    } else if (b.indexOf("สามัญ") !== -1 || b === "gen") {
-      teacherLineId = "U38934e344a242b1a8a7741c7ff043895"; // นางสาวศรัญญา พร้อมประเสริฐ
-    } else {
-      teacherLineId = "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // Fallback to นายเอกราช อาจณรงค์
+    } else if (b.indexOf("กล") !== -1 || /\\bme\\b/.test(b)) {
+      teacherLineId = "U759b2ec7a4eee7f1c4565b9a7a8194e2"; // นายคัมภีร์ ช่วยเพชร
+    } else if (b.indexOf("บัญชี") !== -1 || /\\bac\\b/.test(b)) {
+      teacherLineId = "U84c5267a9feee6f8968d324a3c79c4af"; // นางสาวอรอนงค์ ขุนทองแก้ว
+    } else if (b.indexOf("ยนต์") !== -1 || /\\bat\\b/.test(b)) {
+      teacherLineId = "U00d0bcb58a525b4a9e29999ddd8c8246"; // นายฉัตรชัย ดิษฐาน
+    } else if (b.indexOf("ไฟฟ้า") !== -1 || /\\bel\\b/.test(b)) {
+      teacherLineId = "U013dfdf06ab0c66db7d898540077d80e"; // นางนฤมล เรืองพุฒ
+    } else if (b.indexOf("สามัญ") !== -1 || /\\bgen\\b/.test(b)) {
+      teacherLineId = "U0b1a90a74dacb8fbb2be07d19189932c"; // นางกนกวรรณ ธนาพล
     }
   }
   if (!teacherLineId || teacherLineId.indexOf("U_") === 0) return;
@@ -1340,22 +1370,22 @@ var KNOWN_LINE_MAP = {
 // Helper: ดึง LINE ID ของหัวหน้าสาขา
 function getApproverLineId(branchId, reqUserId) {
   var bQuery = String(branchId || "").trim().toLowerCase();
-  if (bQuery === "db" || bQuery.indexOf("ธุรกิจ") !== -1 || bQuery.indexOf("ดิจิทัล") !== -1) {
+  if (/\\bdb\\b/.test(bQuery) || bQuery.indexOf("ธุรกิจ") !== -1 || bQuery.indexOf("ดิจิทัล") !== -1) {
     return "Uedc4422b785b7a8d1f6c85ae2eb950cf"; // นายเอกราช อาจณรงค์ (อนุมัติตัวเองได้)
   }
-  if (bQuery === "me" || bQuery.indexOf("กล") !== -1) {
+  if (/\\bme\\b/.test(bQuery) || bQuery.indexOf("กล") !== -1) {
     return "U759b2ec7a4eee7f1c4565b9a7a8194e2"; // นายคัมภีร์ ช่วยเพชร
   }
-  if (bQuery === "ac" || bQuery.indexOf("บัญชี") !== -1) {
+  if (/\\bac\\b/.test(bQuery) || bQuery.indexOf("บัญชี") !== -1) {
     return "U84c5267a9feee6f8968d324a3c79c4af"; // นางสาวอรอนงค์ ขุนทองแก้ว
   }
-  if (bQuery === "el" || bQuery.indexOf("ไฟฟ้า") !== -1) {
+  if (/\\bel\\b/.test(bQuery) || bQuery.indexOf("ไฟฟ้า") !== -1) {
     return "U013dfdf06ab0c66db7d898540077d80e"; // นางนฤมล เรืองพุฒ
   }
-  if (bQuery === "at" || bQuery.indexOf("ยนต์") !== -1) {
+  if (/\\bat\\b/.test(bQuery) || bQuery.indexOf("ยนต์") !== -1) {
     return "U00d0bcb58a525b4a9e29999ddd8c8246"; // นายฉัตรชัย ดิษฐาน
   }
-  if (bQuery === "gen" || bQuery.indexOf("สามัญ") !== -1) {
+  if (/\\bgen\\b/.test(bQuery) || bQuery.indexOf("สามัญ") !== -1) {
     return "U0b1a90a74dacb8fbb2be07d19189932c"; // นางกนกวรรณ ธนาพล
   }
 
